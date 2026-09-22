@@ -3,10 +3,11 @@
 Verifies:
   1. Unmet conditions during an active slot do not turn an already-on climate off
   2. Unmet conditions during an active slot do not turn an off climate on
-  3. An inactive slot still turns entities off even if conditions are false
-  4. An inactive slot with conditions true still turns entities off
-  5. An active slot with conditions true still turns entities on
-  6. A disabled timer still skips all entity control
+  3. An inactive slot does not turn entities off when the timer never turned them on
+  4. An inactive slot still turns entities off if the timer turned them on earlier
+  5. An inactive slot with conditions true still turns entities off
+  6. An active slot with conditions true still turns entities on
+  7. A disabled timer still skips all entity control
 
 Run: python scripts/verify_entity_control.py
 """
@@ -166,6 +167,7 @@ def make_coordinator(
     coordinator.config_entry = config_entry
     coordinator._enabled = enabled
     coordinator._home_status = home_status
+    coordinator._timer_owns_entities = False
     coordinator._last_controlled_states = {}
     coordinator._last_command_times = {}
     coordinator._time_slots = []
@@ -200,13 +202,24 @@ async def run_cases() -> None:
         f"calls={coord.hass.services.calls}",
     )
 
-    # --- transition to the next inactive slot ------------------------------
+    # --- blocked timer must not shut entities off on a white hour ----------
     coord = make_coordinator(
         home_status=False, slot_active=False, climate_state="cool"
     )
     await coord._control_entities()
     check(
-        "inactive slot + unmet conditions: climate is turned off",
+        "inactive slot + unmet conditions + timer never activated: climate stays on",
+        climate_off_calls(coord.hass) == [] and climate_on_calls(coord.hass) == [],
+        f"calls={coord.hass.services.calls}",
+    )
+
+    coord = make_coordinator(
+        home_status=False, slot_active=False, climate_state="cool"
+    )
+    coord._timer_owns_entities = True
+    await coord._control_entities()
+    check(
+        "inactive slot + unmet conditions + timer previously activated: climate is turned off",
         len(climate_off_calls(coord.hass)) == 1,
         f"calls={coord.hass.services.calls}",
     )
@@ -254,13 +267,23 @@ async def run_cases() -> None:
         climate_state="cool",
         sensor_state="on",
     )
+    await coord._async_on_schedule_tick(None)  # type: ignore[arg-type]
+    check(
+        "minute tick during active slot with conditions met: timer takes ownership",
+        coord._timer_owns_entities is True and climate_off_calls(coord.hass) == [],
+        f"owns={coord._timer_owns_entities} calls={coord.hass.services.calls}",
+    )
+
     coord.hass.states.set(SENSOR_ID, "off")
+    coord.hass.services.calls.clear()
     await coord._async_on_schedule_tick(None)  # type: ignore[arg-type]
     mid_calls = list(coord.hass.services.calls)
     check(
         "minute tick during active slot after condition drop: leave climate on",
-        climate_off_calls(coord.hass) == [] and coord._home_status is False,
-        f"home_status={coord._home_status} calls={mid_calls}",
+        climate_off_calls(coord.hass) == []
+        and coord._home_status is False
+        and coord._timer_owns_entities is True,
+        f"home_status={coord._home_status} owns={coord._timer_owns_entities} calls={mid_calls}",
     )
 
     coord.get_current_slot = lambda: {  # type: ignore[method-assign]
@@ -274,6 +297,55 @@ async def run_cases() -> None:
         "minute tick into inactive slot with conditions still false: turn climate off",
         len(climate_off_calls(coord.hass)) == 1,
         f"calls={coord.hass.services.calls}",
+    )
+
+    # --- weekday: Shabbat condition false under AND ------------------------
+    shabbat_id = "binary_sensor.issur_melacha"
+    switch_id = "switch.shabbat_halacha"
+    coord = make_coordinator(
+        home_status=True,
+        slot_active=False,
+        climate_state="cool",
+        sensor_state="on",
+    )
+    coord.hass.states.set(shabbat_id, "off")
+    coord.hass.states.set(switch_id, "on")
+    coord.config_entry.options[CONF_HOME_SENSORS] = [shabbat_id, SENSOR_ID]
+    coord.config_entry.options[CONF_HOME_LOGIC] = "AND"
+    coord.config_entry.options[CONF_ENTITIES] = [CLIMATE_ID, switch_id]
+    await coord._async_on_schedule_tick(None)  # type: ignore[arg-type]
+    check(
+        "weekday AND (shabbat off, home on) + inactive slot: do not turn entities off",
+        coord._home_status is False and coord.hass.services.calls == [],
+        f"home_status={coord._home_status} calls={coord.hass.services.calls}",
+    )
+
+    coord.get_current_slot = lambda: {  # type: ignore[method-assign]
+        "hour": 8,
+        "minute": 0,
+        "isActive": True,
+    }
+    coord.hass.states.set(CLIMATE_ID, "off", {"temperature": 24})
+    coord.hass.states.set(switch_id, "off")
+    await coord._async_on_schedule_tick(None)  # type: ignore[arg-type]
+    check(
+        "weekday AND (shabbat off, home on) + active slot: do not turn entities on",
+        coord._home_status is False and coord.hass.services.calls == [],
+        f"home_status={coord._home_status} calls={coord.hass.services.calls}",
+    )
+
+    coord.hass.states.set(shabbat_id, "on")
+    await coord._async_on_schedule_tick(None)  # type: ignore[arg-type]
+    on_targets = {
+        call[2].get("entity_id")
+        for call in coord.hass.services.calls
+        if call[1] in ("set_hvac_mode", "turn_on")
+        and call[2].get("hvac_mode", "on") != "off"
+    }
+    check(
+        "shabbat AND home both met + active slot: every controlled entity is turned on",
+        coord._home_status is True and on_targets == {CLIMATE_ID, switch_id},
+        f"home_status={coord._home_status} targets={on_targets} calls={coord.hass.services.calls}",
     )
 
 

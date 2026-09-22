@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-09-22
+
+### Fixed
+- 🚫 Unmet activation conditions (for example Shabbat AND "at home" on a weekday) no longer turn controlled entities off just because the current clock hour is inactive. The timer turns entities off after a slot ends only if it had turned them on while the conditions were met. An active slot still does not turn entities on while conditions are unmet.
+
 ## [1.4.1] - 2026-09-18
 
 ### Fixed
