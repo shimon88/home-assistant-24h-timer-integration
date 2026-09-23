@@ -12,6 +12,8 @@ CONF_HOME_LOGIC: Final = "home_logic"
 CONF_ENTITY_SETTINGS: Final = "entity_settings"
 CONF_SLOT_RESOLUTION: Final = "slot_resolution"
 CONF_TIMER_OWNS_ENTITIES: Final = "timer_owns_entities"
+CONF_LAST_SLOT_KEY: Final = "last_slot_key"
+CONF_LAST_SHOULD_BE_ON: Final = "last_should_be_on"
 
 # Defaults
 DEFAULT_NAME: Final = "Timer 24H"

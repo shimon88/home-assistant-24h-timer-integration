@@ -8,6 +8,10 @@ Verifies:
   5. An inactive slot with conditions true still turns entities off
   6. An active slot with conditions true still turns entities on
   7. A disabled timer still skips all entity control
+  8. Unavailable entities are skipped and do not clear ownership
+  9. Retry cap stops further commands in the same slot
+  10. External off during an active slot is treated as an override
+  11. Coordinator data refresh does not send control commands
 
 Run: python scripts/verify_entity_control.py
 """
@@ -15,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
 import types
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -170,6 +175,11 @@ def make_coordinator(
     coordinator._timer_owns_entities = False
     coordinator._last_controlled_states = {}
     coordinator._last_command_times = {}
+    coordinator._command_attempts = {}
+    coordinator._external_overrides = set()
+    coordinator._confirmed_on = set()
+    coordinator._current_slot_key = None
+    coordinator._last_should_be_on = None
     coordinator._time_slots = []
     coordinator.get_current_slot = lambda: {  # type: ignore[method-assign]
         "hour": 10,
@@ -346,6 +356,77 @@ async def run_cases() -> None:
         "shabbat AND home both met + active slot: every controlled entity is turned on",
         coord._home_status is True and on_targets == {CLIMATE_ID, switch_id},
         f"home_status={coord._home_status} targets={on_targets} calls={coord.hass.services.calls}",
+    )
+
+    # --- unavailable must not look like off --------------------------------
+    coord = make_coordinator(
+        home_status=False, slot_active=False, climate_state="unavailable"
+    )
+    coord._timer_owns_entities = True
+    await coord._control_entities()
+    check(
+        "unavailable climate at slot end: no off command and ownership kept",
+        climate_off_calls(coord.hass) == [] and coord._timer_owns_entities is True,
+        f"owns={coord._timer_owns_entities} calls={coord.hass.services.calls}",
+    )
+    coord.hass.states.set(CLIMATE_ID, "cool", {"temperature": 24})
+    coord.hass.services.calls.clear()
+    await coord._control_entities()
+    check(
+        "climate becomes available after missed slot end: off command sent",
+        len(climate_off_calls(coord.hass)) == 1,
+        f"calls={coord.hass.services.calls}",
+    )
+
+    # --- retry cap ---------------------------------------------------------
+    coord = make_coordinator(
+        home_status=True, slot_active=True, climate_state="off"
+    )
+    for _ in range(3):
+        await coord._control_entities()
+        coord._last_command_times[CLIMATE_ID] = time.monotonic() - 20
+    check(
+        "retry cap: three on commands while climate stays off",
+        len(climate_on_calls(coord.hass)) == 3,
+        f"calls={coord.hass.services.calls}",
+    )
+    coord.hass.services.calls.clear()
+    coord._last_command_times[CLIMATE_ID] = time.monotonic() - 20
+    await coord._control_entities()
+    check(
+        "retry cap: fourth tick sends nothing",
+        coord.hass.services.calls == [],
+        f"calls={coord.hass.services.calls} attempts={coord._command_attempts}",
+    )
+
+    # --- external override during active slot ------------------------------
+    coord = make_coordinator(
+        home_status=True, slot_active=True, climate_state="cool"
+    )
+    await coord._control_entities()
+    check(
+        "active slot already on: confirm ownership without extra commands",
+        climate_on_calls(coord.hass) == [] and CLIMATE_ID in coord._confirmed_on,
+        f"confirmed={coord._confirmed_on} calls={coord.hass.services.calls}",
+    )
+    coord.hass.states.set(CLIMATE_ID, "off", {"temperature": 24})
+    coord.hass.services.calls.clear()
+    await coord._control_entities()
+    check(
+        "user/automation turned climate off: no further on commands this slot",
+        climate_on_calls(coord.hass) == [] and CLIMATE_ID in coord._external_overrides,
+        f"overrides={coord._external_overrides} calls={coord.hass.services.calls}",
+    )
+
+    # --- data refresh must not control entities ----------------------------
+    coord = make_coordinator(
+        home_status=True, slot_active=True, climate_state="off"
+    )
+    await coord._async_update_data()
+    check(
+        "coordinator refresh does not send control commands",
+        coord.hass.services.calls == [],
+        f"calls={coord.hass.services.calls}",
     )
 
 

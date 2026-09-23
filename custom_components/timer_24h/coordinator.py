@@ -1,7 +1,7 @@
 """DataUpdateCoordinator for Timer 24H integration."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 import logging
 import time
 from typing import Any
@@ -25,15 +25,17 @@ from .const import (
     SLOT_MINUTES,
     SLOT_RESOLUTION_15,
     SLOT_RESOLUTION_30,
+    CONF_LAST_SHOULD_BE_ON,
+    CONF_LAST_SLOT_KEY,
     CONF_SLOT_RESOLUTION,
     CONF_TIMER_OWNS_ENTITIES,
-    UPDATE_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 # Do not re-send the same command while the entity state is still catching up.
 _CONTROL_DEBOUNCE_SECONDS = 15
+_CONTROL_MAX_ATTEMPTS = 3
 
 
 class Timer24HCoordinator(DataUpdateCoordinator):
@@ -50,12 +52,22 @@ class Timer24HCoordinator(DataUpdateCoordinator):
         self._needs_persist: bool = False
         self._last_controlled_states: dict[str, Any] = {}
         self._last_command_times: dict[str, float] = {}
+        self._command_attempts: dict[str, int] = {}
+        self._external_overrides: set[str] = set()
+        self._confirmed_on: set[str] = set()
         # True only after this timer turned entities on while conditions were met.
         # An inactive slot may turn them off later even if a condition dropped.
         # It must not turn off entities the timer never activated (for example a
         # weekday while a Shabbat AND-condition is false).
         self._timer_owns_entities: bool = bool(
             config_entry.options.get(CONF_TIMER_OWNS_ENTITIES, False)
+        )
+        self._current_slot_key: str | None = config_entry.options.get(
+            CONF_LAST_SLOT_KEY
+        )
+        saved_should = config_entry.options.get(CONF_LAST_SHOULD_BE_ON)
+        self._last_should_be_on: bool | None = (
+            bool(saved_should) if saved_should is not None else None
         )
         self._state_change_unsubscribe = None
         self._time_change_unsubscribe = None
@@ -85,7 +97,7 @@ class Timer24HCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL),
+            update_interval=None,
         )
 
     def get_entity_settings(self, entity_id: str | None = None) -> dict[str, Any]:
@@ -95,13 +107,19 @@ class Timer24HCoordinator(DataUpdateCoordinator):
             return dict(all_settings)
         return dict(all_settings.get(entity_id, {}))
 
+    def _is_entity_available(self, entity: Any | None) -> bool:
+        """Return True when the entity exists and has a usable state."""
+        if entity is None:
+            return False
+        return (entity.state or "").lower() not in ("unavailable", "unknown")
+
     def _is_entity_on(self, entity_id: str, entity: Any) -> bool:
         """Return True if the entity is considered on."""
+        if not self._is_entity_available(entity):
+            return False
+
         domain = entity_id.split(".", 1)[0]
         state = (entity.state or "").lower()
-
-        if state in ("unavailable", "unknown"):
-            return False
 
         if domain == "climate":
             return state not in ("off",)
@@ -321,19 +339,10 @@ class Timer24HCoordinator(DataUpdateCoordinator):
         return None
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from API endpoint."""
+        """Return a snapshot. Entity control runs only on the minute tick."""
         try:
-            # Check home status
             self._check_home_status()
-            
-            # Control entities based on current time and home status
-            await self._control_entities()
-            
-            return {
-                "time_slots": self._time_slots,
-                "home_status": self._home_status,
-                "enabled": self._enabled,
-            }
+            return self._coordinator_snapshot()
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
 
@@ -371,6 +380,9 @@ class Timer24HCoordinator(DataUpdateCoordinator):
         self, entity_id: str, entity: Any, desired: dict[str, Any]
     ) -> bool:
         """Return True if the entity already matches the desired control state."""
+        if not self._is_entity_available(entity):
+            return False
+
         is_on = self._is_entity_on(entity_id, entity)
         should_be_on = bool(desired.get("on"))
 
@@ -408,6 +420,29 @@ class Timer24HCoordinator(DataUpdateCoordinator):
 
         return True
 
+    def _slot_key(self, slot: dict[str, Any] | None) -> str | None:
+        """Return a stable hour:minute key for the current quarter."""
+        if not slot:
+            return None
+        try:
+            return f"{int(slot['hour'])}:{int(slot['minute']):02d}"
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def _sync_slot_progress(self, slot_key: str | None, should_be_on: bool) -> None:
+        """Reset per-slot retry/override tracking when the desired target changes."""
+        if (
+            slot_key == self._current_slot_key
+            and should_be_on == self._last_should_be_on
+        ):
+            return
+        self._command_attempts.clear()
+        self._external_overrides.clear()
+        self._confirmed_on.clear()
+        self._current_slot_key = slot_key
+        self._last_should_be_on = should_be_on
+        self._persist_control_state()
+
     async def _control_entities(self) -> None:
         """Control entities based on time slots and activation conditions."""
         if not self._enabled:
@@ -420,6 +455,7 @@ class Timer24HCoordinator(DataUpdateCoordinator):
 
         current_slot = self.get_current_slot()
         should_be_on = current_slot.get("isActive", False) if current_slot else False
+        self._sync_slot_progress(self._slot_key(current_slot), should_be_on)
 
         # Unmet conditions block the schedule: do not turn entities on, and do
         # not turn them off unless this timer turned them on in an earlier
@@ -433,22 +469,33 @@ class Timer24HCoordinator(DataUpdateCoordinator):
             )
             return
 
-        if self._home_status and should_be_on:
-            self._set_timer_owns_entities(True)
-
         now_mono = time.monotonic()
 
         for entity_id in entities:
             entity = self.hass.states.get(entity_id)
-            if not entity:
+            if not self._is_entity_available(entity):
                 continue
 
             desired = self._build_desired_control(entity_id, should_be_on)
 
-            # Always trust the live entity state. Remembering a previous command
-            # must not skip retries when climate/IR devices stayed off.
             if self._entity_matches_desired(entity_id, entity, desired):
                 self._last_controlled_states[entity_id] = desired
+                self._command_attempts.pop(entity_id, None)
+                if should_be_on:
+                    self._confirmed_on.add(entity_id)
+                    if self._home_status:
+                        self._set_timer_owns_entities(True)
+                continue
+
+            if should_be_on and entity_id in self._confirmed_on:
+                self._external_overrides.add(entity_id)
+                _LOGGER.info(
+                    "External override for %s this slot; skipping further on commands",
+                    entity_id,
+                )
+                continue
+
+            if entity_id in self._external_overrides:
                 continue
 
             last_controlled_state = self._last_controlled_states.get(entity_id)
@@ -459,9 +506,19 @@ class Timer24HCoordinator(DataUpdateCoordinator):
             ):
                 continue
 
+            if self._command_attempts.get(entity_id, 0) >= _CONTROL_MAX_ATTEMPTS:
+                _LOGGER.debug(
+                    "Retry cap reached for %s this slot (desired=%s)",
+                    entity_id,
+                    desired,
+                )
+                continue
+
             try:
                 if should_be_on:
                     await self._async_turn_on_entity(entity_id, desired)
+                    if self._home_status:
+                        self._set_timer_owns_entities(True)
                 else:
                     await self._async_turn_off_entity(entity_id)
 
@@ -475,6 +532,9 @@ class Timer24HCoordinator(DataUpdateCoordinator):
 
                 self._last_controlled_states[entity_id] = desired
                 self._last_command_times[entity_id] = now_mono
+                self._command_attempts[entity_id] = (
+                    self._command_attempts.get(entity_id, 0) + 1
+                )
 
             except Exception as err:
                 _LOGGER.error("Failed to control %s: %s", entity_id, err)
@@ -486,21 +546,20 @@ class Timer24HCoordinator(DataUpdateCoordinator):
     def _controlled_entities_match(
         self, entities: list[str], should_be_on: bool
     ) -> bool:
-        """Return True when every available controlled entity matches the schedule."""
+        """Return True when every controlled entity is available and matches."""
+        if not entities:
+            return True
         for entity_id in entities:
             entity = self.hass.states.get(entity_id)
-            if not entity:
-                continue
+            if not self._is_entity_available(entity):
+                return False
             desired = self._build_desired_control(entity_id, should_be_on)
             if not self._entity_matches_desired(entity_id, entity, desired):
                 return False
         return True
 
-    def _set_timer_owns_entities(self, owns: bool) -> None:
-        """Persist whether the timer is responsible for switching entities off."""
-        if self._timer_owns_entities == owns:
-            return
-        self._timer_owns_entities = owns
+    def _persist_control_state(self) -> None:
+        """Write ownership and last-slot progress to config entry options."""
         config_entries = getattr(self.hass, "config_entries", None)
         updater = getattr(config_entries, "async_update_entry", None)
         if updater is None:
@@ -509,18 +568,33 @@ class Timer24HCoordinator(DataUpdateCoordinator):
             self.config_entry,
             options={
                 **self.config_entry.options,
-                CONF_TIMER_OWNS_ENTITIES: owns,
+                CONF_TIMER_OWNS_ENTITIES: self._timer_owns_entities,
+                CONF_LAST_SLOT_KEY: self._current_slot_key,
+                CONF_LAST_SHOULD_BE_ON: self._last_should_be_on,
             },
         )
+
+    def _set_timer_owns_entities(self, owns: bool) -> None:
+        """Persist whether the timer is responsible for switching entities off."""
+        if self._timer_owns_entities == owns:
+            return
+        self._timer_owns_entities = owns
+        self._persist_control_state()
 
     def _clear_control_memory(self, entity_id: str | None = None) -> None:
         """Forget last commanded state so the next tick can retry."""
         if entity_id is None:
             self._last_controlled_states.clear()
             self._last_command_times.clear()
+            self._command_attempts.clear()
+            self._external_overrides.clear()
+            self._confirmed_on.clear()
             return
         self._last_controlled_states.pop(entity_id, None)
         self._last_command_times.pop(entity_id, None)
+        self._command_attempts.pop(entity_id, None)
+        self._external_overrides.discard(entity_id)
+        self._confirmed_on.discard(entity_id)
 
     def _coordinator_snapshot(self) -> dict[str, Any]:
         """Return the coordinator payload used to refresh listeners."""
@@ -887,6 +961,8 @@ class Timer24HCoordinator(DataUpdateCoordinator):
         )
         
         self._clear_control_memory()
+        if not enabled:
+            self._set_timer_owns_entities(False)
         await self._control_entities()
         
         # Update the entity
@@ -906,6 +982,9 @@ class Timer24HCoordinator(DataUpdateCoordinator):
         self._time_change_unsubscribe = async_track_time_change(
             self.hass, self._async_on_schedule_tick, second=0
         )
+        create_task = getattr(self.hass, "async_create_task", None)
+        if create_task is not None:
+            create_task(self._async_on_schedule_tick(dt_util.now()))
         _LOGGER.info("Schedule tick listener configured (every minute at :00)")
 
     def cleanup_time_listener(self) -> None:

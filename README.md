@@ -181,6 +181,8 @@ quarter_labels: always  # 15-min view: 'always' or 'selected' (only the tapped h
    - If activation conditions are not met, the timer does not turn entities on or off
    - If the timer already turned entities on and a condition later becomes false, they stay on until the active slot ends, then turn off
    - A white (inactive) hour does not turn entities off while the timer is blocked and never turned them on
+   - Commands retry at most three times per quarter. If you (or another automation) turn an entity off during an active slot, the timer leaves it until the next quarter
+   - Unavailable entities are skipped until they report a real state (needed after a restart at slot end)
 
 4. **❄️ Climate / Fan Buttons**: When a climate or fan entity is in the controlled list, extra buttons appear under the timer to set temperature/mode or fan speed. These settings are used whenever the timer turns that entity on.
 
