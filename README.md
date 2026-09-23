@@ -2,11 +2,11 @@
 
 <div align="center">
 
-![Timer 24H Icon](https://github.com/davidss20/home-assistant-24h-timer-integration/raw/main/icon.svg)
+![Timer 24H Icon](https://github.com/shimon88/home-assistant-24h-timer-integration/raw/main/icon.svg)
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/release/davidss20/home-assistant-24h-timer-integration.svg?style=for-the-badge&color=blue)](https://github.com/davidss20/home-assistant-24h-timer-integration/releases)
-[![License](https://img.shields.io/github/license/davidss20/home-assistant-24h-timer-integration.svg?style=for-the-badge&color=green)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/release/shimon88/home-assistant-24h-timer-integration.svg?style=for-the-badge&color=blue)](https://github.com/shimon88/home-assistant-24h-timer-integration/releases)
+[![License](https://img.shields.io/github/license/shimon88/home-assistant-24h-timer-integration.svg?style=for-the-badge&color=green)](LICENSE)
 
 </div>
 
@@ -14,7 +14,7 @@ A custom Home Assistant integration that enables daily timers with automatic ent
 
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/davidss20/home-assistant-24h-timer-integration/main/images/preview-1.3.0.svg" alt="Timer 24H 15-minute and 30-minute preview" width="860">
+<img src="https://raw.githubusercontent.com/shimon88/home-assistant-24h-timer-integration/main/images/preview-1.3.0.svg" alt="Timer 24H 15-minute and 30-minute preview" width="860">
 
 <br>
 
@@ -22,7 +22,7 @@ A custom Home Assistant integration that enables daily timers with automatic ent
 
 <br>
 
-<a href="https://htmlpreview.github.io/?https://github.com/davidss20/home-assistant-24h-timer-integration/blob/main/docs/preview/card-preview.html">
+<a href="https://htmlpreview.github.io/?https://github.com/shimon88/home-assistant-24h-timer-integration/blob/main/docs/preview/card-preview.html">
   <img src="https://img.shields.io/badge/Open_live_preview-click_here-3b82f6?style=for-the-badge" alt="Open live preview">
 </a>
 
@@ -44,13 +44,13 @@ A custom Home Assistant integration that enables daily timers with automatic ent
 
 ### Via HACS (Recommended)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=davidss20&repository=home-assistant-24h-timer-integration&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=shimon88&repository=home-assistant-24h-timer-integration&category=integration)
 
 Timer 24H is a **custom HACS repository** (not in the default HACS store yet). Add it once, then download:
 
 1. Open **HACS** in Home Assistant
 2. Click the **three dots** (⋮) → **Custom repositories**
-3. Repository: `https://github.com/davidss20/home-assistant-24h-timer-integration`
+3. Repository: `https://github.com/shimon88/home-assistant-24h-timer-integration`
 4. Type: **Integration**
 5. Click **Add**
 6. Search for **Timer 24H**
@@ -70,7 +70,7 @@ Timer 24H is a **custom HACS repository** (not in the default HACS store yet). A
 
 ### Manual Installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/davidss20/home-assistant-24h-timer-integration/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/shimon88/home-assistant-24h-timer-integration/releases)
 2. Extract the `custom_components/timer_24h` folder into your `config/custom_components/` directory
 3. **Restart Home Assistant**
 4. **Add the Integration** (Settings → Devices & Services → Add Integration → Timer 24H)
@@ -540,9 +540,9 @@ The integration includes full Hebrew support:
 
 ## 🆘 Support
 
-- **🐛 Bug Reports**: [GitHub Issues](https://github.com/davidss20/home-assistant-24h-timer-integration/issues)
-- **💡 Feature Requests**: [GitHub Discussions](https://github.com/davidss20/home-assistant-24h-timer-integration/discussions)
-- **📖 Additional Documentation**: [Wiki](https://github.com/davidss20/home-assistant-24h-timer-integration/wiki)
+- **🐛 Bug Reports**: [GitHub Issues](https://github.com/shimon88/home-assistant-24h-timer-integration/issues)
+- **💡 Feature Requests**: [GitHub Discussions](https://github.com/shimon88/home-assistant-24h-timer-integration/discussions)
+- **📖 Additional Documentation**: [Wiki](https://github.com/shimon88/home-assistant-24h-timer-integration/wiki)
 
 ## 🤝 Contributing
 
@@ -551,6 +551,8 @@ Contributions are welcome! Please submit a Pull Request.
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Fork of [davidss20/home-assistant-24h-timer-integration](https://github.com/davidss20/home-assistant-24h-timer-integration) by David S, used under the MIT License.
 
 ---
 

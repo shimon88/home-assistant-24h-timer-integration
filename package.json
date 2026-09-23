@@ -17,7 +17,7 @@
     "timer",
     "automation"
   ],
-  "author": "davidss20",
+  "author": "shimon88",
   "license": "MIT",
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.0",

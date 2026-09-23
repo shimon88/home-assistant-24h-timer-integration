@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-09-23
+
+### Changed
+- 🔗 Repository metadata now points to the `shimon88` fork: `codeowners`, documentation and issue tracker links in `manifest.json`, plus README and `info.md` links. Original work by David S is credited in the README license section.
+
 ## [1.4.3] - 2026-09-23
 
 ### Fixed
