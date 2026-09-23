@@ -7,13 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.4.2] - 2026-09-23
+## [1.4.3] - 2026-09-23
 
 ### Fixed
-- 🚫 Unmet activation conditions (for example Shabbat AND "at home" on a weekday) no longer turn controlled entities off just because the current clock hour is inactive. The timer turns entities off after a slot ends only if it had turned them on while the conditions were met. An active slot still does not turn entities on while conditions are unmet.
 - ❄️ Unavailable/unknown climate entities are no longer treated as off. Ownership is kept until they are available again, so a restart or HA update at slot end still sends the off command.
 - 🔁 Entity control retries at most three times per slot, then stops. An external off during an active slot is treated as an override until the next quarter.
 - ⏱️ Schedule commands run on the minute tick only. The coordinator refresh no longer sends a second copy of the same command.
+
+## [1.4.2] - 2026-09-22
+
+### Fixed
+- 🚫 Unmet activation conditions (for example Shabbat AND "at home" on a weekday) no longer turn controlled entities off just because the current clock hour is inactive. The timer turns entities off after a slot ends only if it had turned them on while the conditions were met. An active slot still does not turn entities on while conditions are unmet.
 
 ## [1.4.1] - 2026-09-18
 
