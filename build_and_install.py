@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build and install Timer 24H Card
+Build and install Shabbat Clock Card
 """
 import subprocess
 import shutil
@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 def main():
-    print("🔨 Building Timer 24H Card...")
+    print("🔨 Building Shabbat Clock Card...")
     print("-" * 50)
 
     # On Windows, "npm" is typically a .cmd shim which CreateProcess can't execute directly
@@ -36,11 +36,11 @@ def main():
     # Step 2: Copy files
     print("\n📋 Step 2: Copying files...")
     files_to_copy = [
-        "timer-24h-card.js",
-        "timer-24h-card-editor.js"
+        "shabbat-clock-card.js",
+        "shabbat-clock-card-editor.js"
     ]
     
-    dest_dir = Path("custom_components/timer_24h/dist")
+    dest_dir = Path("custom_components/shabbat_clock/dist")
     dest_dir.mkdir(parents=True, exist_ok=True)
     
     for filename in files_to_copy:
@@ -57,9 +57,9 @@ def main():
         else:
             print(f"⚠️  Warning: {filename} not found")
     
-    print("\n✨ Done! Files are ready in custom_components/timer_24h/dist/")
+    print("\n✨ Done! Files are ready in custom_components/shabbat_clock/dist/")
     print("\n📌 Next steps:")
-    print("1. Copy the 'custom_components/timer_24h' folder to your Home Assistant")
+    print("1. Copy the 'custom_components/shabbat_clock' folder to your Home Assistant")
     print("2. Restart Home Assistant")
     print("3. Clear browser cache (Ctrl+F5)")
     print("-" * 50)

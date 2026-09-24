@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Timer 24H Card - Simple Preview</title>
+    <title>Shabbat Clock Card - Simple Preview</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -48,7 +48,7 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         
-        timer-24h-card {
+        shabbat-clock-card {
             display: block;
             margin: 20px auto;
             max-width: 600px;
@@ -69,7 +69,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🕐 Timer 24H Card - Preview</h1>
+        <h1>🕐 Shabbat Clock Card - Preview</h1>
         
         <div class="info">
             <h3>מצב: <span id="load-status">טוען...</span></h3>
@@ -77,7 +77,7 @@
         </div>
         
         <!-- The card will be rendered here -->
-        <timer-24h-card id="timer-card"></timer-24h-card>
+        <shabbat-clock-card id="timer-card"></shabbat-clock-card>
         
         <div class="debug" id="debug">
             Debug info will appear here...
@@ -86,7 +86,7 @@
     
     <!-- Load the card as a module -->
     <script type="module">
-        console.log('🚀 Starting to load Timer 24H Card...');
+        console.log('🚀 Starting to load Shabbat Clock Card...');
         
         // Create mock time slots
         function createTimeSlots() {
@@ -109,7 +109,7 @@
         // Mock Home Assistant object
         window.mockHass = {
             states: {
-                'sensor.timer_24h_preview': {
+                'sensor.shabbat_clock_preview': {
                     state: 'on',
                     attributes: {
                         friendly_name: 'טיימר תצוגה מקדימה',
@@ -123,7 +123,7 @@
                 updateDebug(`Called: ${domain}.${service} - Hour: ${data.hour}:${String(data.minute).padStart(2, '0')}`);
                 
                 // Toggle the slot
-                if (domain === 'timer_24h' && service === 'toggle_slot') {
+                if (domain === 'shabbat_clock' && service === 'toggle_slot') {
                     const slot = timeSlots.find(s => s.hour === data.hour && s.minute === data.minute);
                     if (slot) {
                         slot.isActive = !slot.isActive;
@@ -156,21 +156,21 @@
         
         // Import the card
         try {
-            console.log('📦 Importing timer-24h-card.js...');
+            console.log('📦 Importing shabbat-clock-card.js...');
             const cacheBuster = '?v=' + Date.now();
-            import('./timer-24h-card.js' + cacheBuster)
+            import('./shabbat-clock-card.js' + cacheBuster)
                 .then(() => {
-                    console.log('✅ timer-24h-card.js imported successfully');
+                    console.log('✅ shabbat-clock-card.js imported successfully');
                     updateStatus('✅ קובץ נטען');
                     updateDebug('Card JS file loaded successfully');
                     
                     // Wait for custom element to be defined
-                    return customElements.whenDefined('timer-24h-card');
+                    return customElements.whenDefined('shabbat-clock-card');
                 })
                 .then(() => {
-                    console.log('✅ timer-24h-card element defined');
+                    console.log('✅ shabbat-clock-card element defined');
                     updateStatus('✅ אלמנט הוגדר');
-                    updateDebug('Custom element "timer-24h-card" is defined');
+                    updateDebug('Custom element "shabbat-clock-card" is defined');
                     
                     // Get the card element
                     const card = document.getElementById('timer-card');
@@ -185,10 +185,10 @@
                     // Configure the card
                     console.log('⚙️ Configuring card...');
                     card.setConfig({
-                        entity: 'sensor.timer_24h_preview',
+                        entity: 'sensor.shabbat_clock_preview',
                         show_title: true
                     });
-                    updateDebug('Card configured with entity: sensor.timer_24h_preview');
+                    updateDebug('Card configured with entity: sensor.shabbat_clock_preview');
                     
                     // Set mock hass
                     console.log('🏠 Setting mock Home Assistant...');

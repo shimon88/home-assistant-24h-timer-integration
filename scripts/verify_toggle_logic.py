@@ -57,7 +57,7 @@ import importlib.util  # noqa: E402
 sys.meta_path.insert(0, _StubFinder())
 
 sys.path.insert(0, str(REPO_ROOT / "custom_components"))
-from timer_24h.coordinator import Timer24HCoordinator  # noqa: E402
+from shabbat_clock.coordinator import ShabbatClockCoordinator  # noqa: E402
 
 results: list[tuple[str, bool, str]] = []
 
@@ -66,8 +66,8 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     results.append((name, bool(ok), detail))
 
 
-def make_coordinator(resolution: int, active: set[tuple[int, int]]) -> Timer24HCoordinator:
-    coordinator = object.__new__(Timer24HCoordinator)
+def make_coordinator(resolution: int, active: set[tuple[int, int]]) -> ShabbatClockCoordinator:
+    coordinator = object.__new__(ShabbatClockCoordinator)
     coordinator._time_slots = [
         {"hour": hour, "minute": minute, "isActive": (hour, minute) in active}
         for hour in range(24)
@@ -88,7 +88,7 @@ async def _noop_async(*args, **kwargs) -> None:
     return None
 
 
-def active_of(coordinator: Timer24HCoordinator, hour: int) -> list[int]:
+def active_of(coordinator: ShabbatClockCoordinator, hour: int) -> list[int]:
     return sorted(
         slot["minute"]
         for slot in coordinator._time_slots

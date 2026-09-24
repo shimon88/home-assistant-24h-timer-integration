@@ -1,9 +1,9 @@
 {
-  "name": "timer-24h-card",
-  "version": "3.0.0",
+  "name": "shabbat-clock-card",
+  "version": "3.1.0",
   "type": "module",
   "description": "A 24-hour timer card for Home Assistant with automatic entity control",
-  "main": "timer-24h-card.js",
+  "main": "shabbat-clock-card.js",
   "scripts": {
     "build": "rollup -c",
     "dev": "rollup -c -w",

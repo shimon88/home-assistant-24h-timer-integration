@@ -1,5 +1,5 @@
 {
-  "name": "Timer 24H Integration",
+  "name": "Shabbat Clock Integration",
   "render_readme": true,
   "content_in_root": false,
   "hacs": "1.6.0",

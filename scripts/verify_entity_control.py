@@ -65,13 +65,13 @@ import importlib.util  # noqa: E402
 sys.meta_path.insert(0, _StubFinder())
 
 sys.path.insert(0, str(REPO_ROOT / "custom_components"))
-from timer_24h.const import (  # noqa: E402
+from shabbat_clock.const import (  # noqa: E402
     CONF_ENTITIES,
     CONF_ENTITY_SETTINGS,
     CONF_HOME_LOGIC,
     CONF_HOME_SENSORS,
 )
-from timer_24h.coordinator import Timer24HCoordinator  # noqa: E402
+from shabbat_clock.coordinator import ShabbatClockCoordinator  # noqa: E402
 
 results: list[tuple[str, bool, str]] = []
 CLIMATE_ID = "climate.living_room"
@@ -150,8 +150,8 @@ def make_coordinator(
     slot_active: bool = True,
     climate_state: str = "cool",
     sensor_state: str = "on",
-) -> Timer24HCoordinator:
-    coordinator = object.__new__(Timer24HCoordinator)
+) -> ShabbatClockCoordinator:
+    coordinator = object.__new__(ShabbatClockCoordinator)
     hass = FakeHass()
     hass.states.set(
         CLIMATE_ID,

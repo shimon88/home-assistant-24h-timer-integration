@@ -9,14 +9,11 @@ import {
 import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCardEditor } from 'custom-card-helpers';
 
-type QuarterLabelsMode = 'always' | 'selected';
-
-interface Timer24HCardConfig {
+interface ShabbatClockCardConfig {
   entity: string;
   show_title?: boolean;
   custom_title?: string;
   show_enable_switch?: boolean;
-  quarter_labels?: QuarterLabelsMode;
 }
 
 const CONDITION_DOMAINS = [
@@ -27,10 +24,10 @@ const CONDITION_DOMAINS = [
   'input_boolean',
 ];
 
-@customElement('timer-24h-card-editor')
-export class Timer24HCardEditor extends LitElement implements LovelaceCardEditor {
+@customElement('shabbat-clock-card-editor')
+export class ShabbatClockCardEditor extends LitElement implements LovelaceCardEditor {
   @property({ attribute: false }) public hass!: HomeAssistant;
-  @state() private config: Timer24HCardConfig = { entity: '', show_title: true };
+  @state() private config: ShabbatClockCardConfig = { entity: '', show_title: true };
   @state() private draftSensors: string[] = [];
   @state() private draftLogic: 'OR' | 'AND' = 'OR';
   @state() private conditionsSaving = false;
@@ -38,7 +35,7 @@ export class Timer24HCardEditor extends LitElement implements LovelaceCardEditor
   @state() private slotResolutionSaving = false;
   private lastSyncedEntity = '';
 
-  public setConfig(config: Timer24HCardConfig): void {
+  public setConfig(config: ShabbatClockCardConfig): void {
     this.config = { ...config };
   }
 
@@ -105,19 +102,19 @@ export class Timer24HCardEditor extends LitElement implements LovelaceCardEditor
     return html`
       <div class="card-config">
         <div class="config-header">
-          <h2>Timer 24H Card Configuration</h2>
-          <p>Select a timer entity created by the Timer 24H integration</p>
+          <h2>Shabbat Clock Card Configuration</h2>
+          <p>Select a timer entity created by the Shabbat Clock integration</p>
         </div>
 
         ${timerEntities.length === 0
           ? html`
               <div class="warning">
                 <p>⚠️ No timer entities found!</p>
-                <p>Please add a Timer 24H integration instance first:</p>
+                <p>Please add a Shabbat Clock integration instance first:</p>
                 <ol>
                   <li>Go to Settings → Devices & Services</li>
                   <li>Click "+ Add Integration"</li>
-                  <li>Search for "Timer 24H"</li>
+                  <li>Search for "Shabbat Clock"</li>
                   <li>Follow the setup wizard</li>
                 </ol>
               </div>
@@ -215,40 +212,12 @@ export class Timer24HCardEditor extends LitElement implements LovelaceCardEditor
                   </button>
                 </div>
                 <div class="help-text">
-                  Saved to the timer (not this card). 15 min: tap a quarter to
-                  toggle it, hold it to toggle the whole hour. 30 min: classic
-                  two-ring view.
+                  Saved to the timer (not this card). The dial is one ring of
+                  consecutive slots: 96 quarters or 48 half hours. Tap one slot,
+                  swipe across several, or hold one to toggle the whole hour.
                 </div>
               </div>
 
-              ${this.getSlotResolution() === 15
-                ? html`
-                    <div class="config-row">
-                      <label>Quarter labels (15 min)</label>
-                      <div class="logic-toggle">
-                        <button
-                          type="button"
-                          class="logic-btn ${this.getQuarterLabels() === 'always' ? 'active' : ''}"
-                          @click=${() => this.setQuarterLabels('always')}
-                        >
-                          Always visible
-                        </button>
-                        <button
-                          type="button"
-                          class="logic-btn ${this.getQuarterLabels() === 'selected' ? 'active' : ''}"
-                          @click=${() => this.setQuarterLabels('selected')}
-                        >
-                          Only on tap
-                        </button>
-                      </div>
-                      <div class="help-text">
-                        Always visible: 15 / 30 / 45 shown on every hour. Only on
-                        tap: shown for the hour you last tapped, keeping the
-                        clock cleaner.
-                      </div>
-                    </div>
-                  `
-                : ''}
             `
           : ''}
 
@@ -376,16 +345,6 @@ export class Timer24HCardEditor extends LitElement implements LovelaceCardEditor
     this.configChanged();
   }
 
-  private getQuarterLabels(): QuarterLabelsMode {
-    return this.config?.quarter_labels === 'selected' ? 'selected' : 'always';
-  }
-
-  private setQuarterLabels(mode: QuarterLabelsMode): void {
-    if (this.getQuarterLabels() === mode) return;
-    this.config = { ...this.config, quarter_labels: mode };
-    this.configChanged();
-  }
-
   private getSlotResolution(): 15 | 30 {
     if (!this.config?.entity || !this.hass) return 15;
     const value = Number(
@@ -399,7 +358,7 @@ export class Timer24HCardEditor extends LitElement implements LovelaceCardEditor
     if (this.getSlotResolution() === resolution) return;
     this.slotResolutionSaving = true;
     try {
-      await this.hass.callService('timer_24h', 'set_slot_resolution', {
+      await this.hass.callService('shabbat_clock', 'set_slot_resolution', {
         entity_id: this.config.entity,
         slot_resolution: resolution,
       });
@@ -435,7 +394,7 @@ export class Timer24HCardEditor extends LitElement implements LovelaceCardEditor
     if (!this.hass || !this.config?.entity || this.conditionsSaving) return;
     this.conditionsSaving = true;
     try {
-      await this.hass.callService('timer_24h', 'set_activation_conditions', {
+      await this.hass.callService('shabbat_clock', 'set_activation_conditions', {
         entity_id: this.config.entity,
         home_sensors: this.draftSensors,
         home_logic: this.draftLogic,

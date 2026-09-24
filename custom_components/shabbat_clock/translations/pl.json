@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Dodaj Timer 24H",
+        "title": "Dodaj Shabbat Clock",
         "description": "Skonfiguruj swój 24-godzinny timer z automatyczną kontrolą encji",
         "data": {
           "name": "Nazwa Timera",
@@ -30,7 +30,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Konfiguruj Timer 24H",
+        "title": "Konfiguruj Shabbat Clock",
         "description": "Zaktualizuj ustawienia i zachowanie timera",
         "data": {
           "name": "Nazwa Timera",

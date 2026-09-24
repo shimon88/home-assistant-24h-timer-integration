@@ -1,4 +1,4 @@
-"""Config flow for Timer 24H integration."""
+"""Config flow for Shabbat Clock integration."""
 from __future__ import annotations
 
 import logging
@@ -59,8 +59,8 @@ def _filter_entities(hass: HomeAssistant, domains: list[str]) -> list[str]:
     return sorted(entities)
 
 
-class Timer24HConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Timer 24H."""
+class ShabbatClockConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Shabbat Clock."""
 
     VERSION = 1
 
@@ -115,13 +115,13 @@ class Timer24HConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
-    ) -> Timer24HOptionsFlow:
+    ) -> ShabbatClockOptionsFlow:
         """Get the options flow for this handler."""
-        return Timer24HOptionsFlow()
+        return ShabbatClockOptionsFlow()
 
 
-class Timer24HOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Timer 24H."""
+class ShabbatClockOptionsFlow(config_entries.OptionsFlow):
+    """Handle options flow for Shabbat Clock."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None

@@ -1,4 +1,4 @@
-"""Timer entity for Timer 24H integration."""
+"""Timer entity for Shabbat Clock integration."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -40,14 +40,14 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Timer 24H sensor from a config entry."""
+    """Set up Shabbat Clock sensor from a config entry."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]["coordinator"]
     
-    async_add_entities([Timer24HEntity(coordinator, config_entry)])
+    async_add_entities([ShabbatClockEntity(coordinator, config_entry)])
 
 
-class Timer24HEntity(CoordinatorEntity, SensorEntity):
-    """Representation of a Timer 24H entity."""
+class ShabbatClockEntity(CoordinatorEntity, SensorEntity):
+    """Representation of a Shabbat Clock entity."""
 
     # Use device name only (avoid "Name Name" / duplicated entity_id)
     _attr_has_entity_name = True
@@ -67,9 +67,9 @@ class Timer24HEntity(CoordinatorEntity, SensorEntity):
         return DeviceInfo(
             identifiers={(DOMAIN, self.config_entry.entry_id)},
             name=name,
-            manufacturer="Timer 24H",
-            model="24 Hour Timer",
-            sw_version="1.4.0",
+            manufacturer="Shabbat Clock",
+            model="Shabbat Clock",
+            sw_version="2.0.0",
         )
 
     @property

@@ -1,6 +1,8 @@
-# Timer 24H Integration
+# Shabbat Clock Integration
 
 A powerful 24-hour visual timer with automatic entity control for Home Assistant.
+
+> **Fork notice:** Fork of [davidss20/home-assistant-24h-timer-integration](https://github.com/davidss20/home-assistant-24h-timer-integration) by David S, maintained by [@shimon88](https://github.com/shimon88) under the MIT License.
 
 ## ✨ Key Features
 
@@ -16,8 +18,8 @@ A powerful 24-hour visual timer with automatic entity control for Home Assistant
 
 1. **Install** via HACS
 2. **Restart** Home Assistant
-3. **Add Integration**: Settings → Devices & Services → Add Integration → Timer 24H
-4. **Add Card**: Dashboard → Add Card → Timer 24H Card
+3. **Add Integration**: Settings → Devices & Services → Add Integration → Shabbat Clock
+4. **Add Card**: Dashboard → Add Card → Shabbat Clock Card
 
 ## 📸 Preview
 

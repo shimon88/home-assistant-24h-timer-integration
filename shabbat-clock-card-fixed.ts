@@ -10,7 +10,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCard, LovelaceCardConfig } from 'custom-card-helpers';
 
 // Types
-interface Timer24HCardConfig extends LovelaceCardConfig {
+interface ShabbatClockCardConfig extends LovelaceCardConfig {
   entity: string;
   show_title?: boolean;
 }
@@ -21,10 +21,10 @@ interface TimeSlot {
   isActive: boolean;
 }
 
-@customElement('timer-24h-card')
-export class Timer24HCard extends LitElement implements LovelaceCard {
+@customElement('shabbat-clock-card')
+export class ShabbatClockCard extends LitElement implements LovelaceCard {
   @property({ attribute: false }) public hass!: HomeAssistant;
-  @state() private config!: Timer24HCardConfig;
+  @state() private config!: ShabbatClockCardConfig;
   @state() private currentTime: Date = new Date();
   
   private updateInterval?: number;
@@ -43,11 +43,11 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
   }
 
   public static async getConfigElement() {
-    await import('./timer-24h-card-editor.js');
-    return document.createElement('timer-24h-card-editor');
+    await import('./shabbat-clock-card-editor.js');
+    return document.createElement('shabbat-clock-card-editor');
   }
 
-  public static getStubConfig(): Timer24HCardConfig {
+  public static getStubConfig(): ShabbatClockCardConfig {
     return {
       entity: '',
       show_title: true,
@@ -58,7 +58,7 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     super();
   }
 
-  public setConfig(config: Timer24HCardConfig): void {
+  public setConfig(config: ShabbatClockCardConfig): void {
     if (!config) {
       throw new Error('Invalid configuration: config is required');
     }
@@ -136,15 +136,15 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
 
   private getEntityName(): string {
     const entity = this.getEntityState();
-    if (!entity) return 'Timer 24H';
-    return entity.attributes.friendly_name || 'Timer 24H';
+    if (!entity) return 'Shabbat Clock';
+    return entity.attributes.friendly_name || 'Shabbat Clock';
   }
 
   private async toggleTimeSlot(hour: number, minute: number): Promise<void> {
     if (!this.hass || !this.config.entity) return;
 
     try {
-      await this.hass.callService('timer_24h', 'toggle_slot', {
+      await this.hass.callService('shabbat_clock', 'toggle_slot', {
         entity_id: this.config.entity,
         hour: hour,
         minute: minute,
@@ -479,15 +479,15 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
 }
 
 console.info(
-  '%c  TIMER-24H-CARD  %c  Version 3.5.0 - RADICAL FIX  ',
+  '%c  SHABBAT-CLOCK-CARD  %c  Version 3.5.0 - RADICAL FIX  ',
   'color: orange; font-weight: bold; background: black',
   'color: white; font-weight: bold; background: dimgray',
 );
 
 (window as any).customCards = (window as any).customCards || [];
 (window as any).customCards.push({
-  type: 'timer-24h-card',
-  name: 'Timer 24H Card',
+  type: 'shabbat-clock-card',
+  name: 'Shabbat Clock Card',
   description: '24 Hour Timer Card with automatic entity control',
   preview: true,
   documentationURL: 'https://github.com/davidss20/home-assistant-24h-timer-integration'

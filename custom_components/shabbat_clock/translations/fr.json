@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Ajouter Minuteur 24H",
+        "title": "Ajouter Shabbat Clock",
         "description": "Configurez votre minuteur de 24 heures avec contrôle automatique des entités",
         "data": {
           "name": "Nom du Minuteur",
@@ -30,7 +30,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Configurer Minuteur 24H",
+        "title": "Configurer Shabbat Clock",
         "description": "Mettre à jour les paramètres et le comportement du minuteur",
         "data": {
           "name": "Nom du Minuteur",

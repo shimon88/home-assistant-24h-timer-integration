@@ -1,4 +1,4 @@
-"""DataUpdateCoordinator for Timer 24H integration."""
+"""DataUpdateCoordinator for Shabbat Clock integration."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -38,8 +38,8 @@ _CONTROL_DEBOUNCE_SECONDS = 15
 _CONTROL_MAX_ATTEMPTS = 3
 
 
-class Timer24HCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching Timer 24H data."""
+class ShabbatClockCoordinator(DataUpdateCoordinator):
+    """Class to manage fetching Shabbat Clock data."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize."""

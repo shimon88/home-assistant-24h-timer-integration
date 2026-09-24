@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-23
+
+### Changed
+- **Breaking:** Integration renamed to Shabbat Clock. Domain is `shabbat_clock`, Lovelace card is `custom:shabbat-clock-card`, and services use the `shabbat_clock.*` prefix. Remove the old Timer 24H instance, add Shabbat Clock, and update dashboard YAML. Lovelace still drops the old `/local/timer-24h-card/` resource on setup.
+
+## [1.5.0] - 2026-09-23
+
+### Changed
+- 🕐 The dial is now a single ring of consecutive slots, like a mechanical timer: 48 half-hour wedges, or 96 quarter wedges in the 15-minute view. Half hours sit next to their hour instead of in a second inner ring. Hour numbers read outward along the radius and hour boundaries get a heavier divider.
+
+### Added
+- 👆 Swipe across the ring to set a range of slots in one gesture. The first wedge decides whether the swipe turns slots on or off, and the whole swipe is saved with a single `set_slots` call on release. Tap still toggles one wedge, and press and hold still toggles the whole hour.
+
+### Removed
+- 🏷️ Card option `quarter_labels`. The single ring has no room for `15` / `30` / `45` labels, so only hour numbers are drawn. The exact time of a wedge is still in its tooltip. The option is ignored if it is left in YAML.
+
 ## [1.4.4] - 2026-09-23
 
 ### Changed

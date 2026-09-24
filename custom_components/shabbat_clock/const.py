@@ -1,7 +1,7 @@
-"""Constants for the Timer 24H integration."""
+"""Constants for the Shabbat Clock integration."""
 from typing import Final
 
-DOMAIN: Final = "timer_24h"
+DOMAIN: Final = "shabbat_clock"
 PLATFORMS: Final = ["sensor"]
 
 # Configuration and options
@@ -16,7 +16,7 @@ CONF_LAST_SLOT_KEY: Final = "last_slot_key"
 CONF_LAST_SHOULD_BE_ON: Final = "last_should_be_on"
 
 # Defaults
-DEFAULT_NAME: Final = "Timer 24H"
+DEFAULT_NAME: Final = "Shabbat Clock"
 DEFAULT_HOME_LOGIC: Final = "OR"
 DEFAULT_SLOT_RESOLUTION: Final = "15"
 SLOT_MINUTES: Final = (0, 15, 30, 45)

@@ -1,11 +1,12 @@
 /**
- * Headless check of the 15-minute card interaction (jsdom, no browser needed).
+ * Headless check of the card ring interaction (jsdom, no browser needed).
  *
  * Verifies:
- *  1. Short tap on a quarter calls toggle_slot for that quarter only
- *  2. Long press calls toggle_hour once and does not also toggle the quarter
- *  3. quarter_labels: 'always' labels every hour, 'selected' only the tapped one
- *  4. Hour numbers are rendered upright (no wedge rotation)
+ *  1. Short tap on a wedge calls toggle_slot for that wedge only
+ *  2. Long press calls toggle_hour once and does not also toggle the wedge
+ *  3. A swipe paints the crossed wedges with one set_slots call
+ *  4. A swipe that starts on an active wedge clears the wedges it crosses
+ *  5. The ring has 96 wedges at 15 minutes and 48 at 30 minutes
  *
  * Requires jsdom (dev only): npm install --no-save --legacy-peer-deps jsdom
  * Run: node scripts/verify-card-gestures.mjs
@@ -38,22 +39,24 @@ globalThis.Event = dom.window.Event;
 globalThis.CustomEvent = dom.window.CustomEvent;
 globalThis.EventTarget = dom.window.EventTarget;
 
-await import('../timer-24h-card.js');
+await import('../shabbat-clock-card.js');
 
-const ENTITY = 'sensor.timer_24h_test';
+const ENTITY = 'sensor.shabbat_clock_test';
+const CENTER = 200;
+const RING_MID = 115;
 const calls = [];
 
-function makeSlots() {
+function makeSlots(isActive = () => false) {
   const slots = [];
   for (let hour = 0; hour < 24; hour++) {
     for (const minute of [0, 15, 30, 45]) {
-      slots.push({ hour, minute, isActive: false });
+      slots.push({ hour, minute, isActive: isActive(hour, minute) });
     }
   }
   return slots;
 }
 
-function makeHass(slots) {
+function makeHass(slots, resolution = 15) {
   return {
     language: 'en',
     states: {
@@ -64,7 +67,7 @@ function makeHass(slots) {
           friendly_name: 'Test timer',
           home_status: true,
           enabled: true,
-          slot_resolution: 15,
+          slot_resolution: resolution,
           controlled_entities: [],
           time_slots: slots.map((s) => ({ ...s })),
         },
@@ -76,53 +79,59 @@ function makeHass(slots) {
   };
 }
 
-async function mountCard(quarterLabels) {
-  const card = document.createElement('timer-24h-card');
-  card.setConfig({ entity: ENTITY, show_title: true, quarter_labels: quarterLabels });
-  card.hass = makeHass(makeSlots());
+async function mountCard(resolution = 15, slots = makeSlots()) {
+  const card = document.createElement('shabbat-clock-card');
+  card.setConfig({ entity: ENTITY, show_title: true });
+  card.hass = makeHass(slots, resolution);
   document.body.appendChild(card);
   await card.updateComplete;
+
+  // jsdom has no SVG layout, so make the screen matrix an identity transform:
+  // pointer coordinates are then read directly as viewBox coordinates
+  const svg = card.shadowRoot.querySelector('svg.timer-svg');
+  svg.createSVGPoint = () => ({
+    x: 0,
+    y: 0,
+    matrixTransform() {
+      return { x: this.x, y: this.y };
+    },
+  });
+  svg.getScreenCTM = () => ({ inverse: () => ({}) });
+  svg.setPointerCapture = () => {};
+  svg.releasePointerCapture = () => {};
+  card.ringSvg = svg;
   return card;
 }
 
-function quarterPaths(card) {
+function wedgePaths(card) {
   return [...card.shadowRoot.querySelectorAll('path')].filter((p) => {
     const title = p.querySelector('title')?.textContent?.trim() ?? '';
     return /^\d{2}:\d{2}$/.test(title);
   });
 }
 
-function pathFor(card, label) {
-  return quarterPaths(card).find(
-    (p) => p.querySelector('title').textContent.trim() === label
+/** Point at the middle of the wedge that holds hour:minute */
+function pointFor(hour, minute, resolution) {
+  const count = resolution === 15 ? 96 : 48;
+  const index =
+    resolution === 15 ? hour * 4 + minute / 15 : hour * 2 + (minute >= 30 ? 1 : 0);
+  const angle = (((index + 0.5) * 360) / count - 90) * (Math.PI / 180);
+  return {
+    x: CENTER + RING_MID * Math.cos(angle),
+    y: CENTER + RING_MID * Math.sin(angle),
+  };
+}
+
+function fire(card, type, point) {
+  const event = new dom.window.Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { pointerId: 1, clientX: point?.x ?? 0, clientY: point?.y ?? 0 });
+  card.ringSvg.dispatchEvent(event);
+}
+
+function labels(card, fontSize) {
+  return [...card.shadowRoot.querySelectorAll('text')].filter(
+    (t) => t.getAttribute('font-size') === fontSize
   );
-}
-
-// Hour numbers and quarter labels share values (hour "15" vs quarter "15"),
-// so classify them by font size: hours are 13, quarters 9.5
-const HOUR_FONT = '13';
-const QUARTER_FONT = '9.5';
-
-function texts(card) {
-  return [...card.shadowRoot.querySelectorAll('text')].map((t) => ({
-    value: t.textContent.trim(),
-    fontSize: t.getAttribute('font-size') || '',
-    transform: t.getAttribute('transform') || '',
-  }));
-}
-
-function hourLabels(card) {
-  return texts(card).filter((t) => t.fontSize === HOUR_FONT);
-}
-
-function quarterLabels(card) {
-  return texts(card).filter(
-    (t) => t.fontSize === QUARTER_FONT && ['15', '30', '45'].includes(t.value)
-  );
-}
-
-function fire(el, type) {
-  el.dispatchEvent(new dom.window.Event(type, { bubbles: true, cancelable: true }));
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -131,13 +140,12 @@ function check(name, condition, detail = '') {
   results.push({ name, ok: Boolean(condition), detail });
 }
 
-// --- 1. short tap toggles only the tapped quarter ---------------------------
+// --- 1. short tap toggles only the tapped wedge ----------------------------
 {
-  const card = await mountCard('always');
-  const target = pathFor(card, '09:30');
+  const card = await mountCard(15);
   calls.length = 0;
-  fire(target, 'pointerdown');
-  fire(target, 'pointerup');
+  fire(card, 'pointerdown', pointFor(9, 30, 15));
+  fire(card, 'pointerup', pointFor(9, 30, 15));
   await sleep(50);
 
   check('short tap fires exactly one service call', calls.length === 1, JSON.stringify(calls));
@@ -151,33 +159,13 @@ function check(name, condition, detail = '') {
   card.remove();
 }
 
-// --- 2. tap on the outer ring (:00) does not fill the whole hour ------------
+// --- 2. long press toggles the whole hour, and only that -------------------
 {
-  const card = await mountCard('always');
-  const target = pathFor(card, '14:00');
+  const card = await mountCard(15);
   calls.length = 0;
-  fire(target, 'pointerdown');
-  fire(target, 'pointerup');
-  await sleep(50);
-
-  check(
-    'tap on :00 stays a single quarter toggle',
-    calls.length === 1 &&
-      calls[0].service === 'toggle_slot' &&
-      calls[0].data.minute === 0,
-    JSON.stringify(calls)
-  );
-  card.remove();
-}
-
-// --- 3. long press toggles the whole hour, and only that -------------------
-{
-  const card = await mountCard('always');
-  const target = pathFor(card, '21:15');
-  calls.length = 0;
-  fire(target, 'pointerdown');
+  fire(card, 'pointerdown', pointFor(21, 15, 15));
   await sleep(700);
-  fire(target, 'pointerup');
+  fire(card, 'pointerup', pointFor(21, 15, 15));
   await sleep(50);
 
   check('long press fires exactly one service call', calls.length === 1, JSON.stringify(calls));
@@ -187,70 +175,78 @@ function check(name, condition, detail = '') {
     JSON.stringify(calls[0])
   );
   check(
-    'long press does not also toggle the held quarter',
+    'long press does not also toggle the held wedge',
     !calls.some((c) => c.service === 'toggle_slot'),
     JSON.stringify(calls)
   );
   card.remove();
 }
 
-// --- 4. labels: always vs selected ----------------------------------------
+// --- 3. swipe paints the crossed wedges in one call ------------------------
 {
-  const card = await mountCard('always');
-  check(
-    "quarter_labels 'always' renders 15/30/45 for all 24 hours",
-    quarterLabels(card).length === 72,
-    `found ${quarterLabels(card).length}`
-  );
-  const hours = hourLabels(card);
-  check(
-    'all 24 hour numbers render, upright (rotate 0)',
-    hours.length === 24 && hours.every((t) => /rotate\(0 /.test(t.transform)),
-    `${hours.length} labels, sample: ${hours[22]?.value} ${hours[22]?.transform}`
-  );
-  card.remove();
-}
-
-{
-  const card = await mountCard('selected');
-  check(
-    "quarter_labels 'selected' hides quarter labels before any tap",
-    quarterLabels(card).length === 0,
-    `found ${quarterLabels(card).length}`
-  );
-
-  const target = pathFor(card, '07:45');
-  fire(target, 'pointerdown');
-  fire(target, 'pointerup');
-  await card.updateComplete;
-  await sleep(50);
-  await card.updateComplete;
-
-  check(
-    "quarter_labels 'selected' shows 3 labels for the tapped hour",
-    quarterLabels(card).length === 3,
-    `found ${quarterLabels(card).length}`
-  );
-  card.remove();
-}
-
-// --- 5. regression: 30-minute view still toggles the half-hour pair --------
-{
-  const card = document.createElement('timer-24h-card');
-  card.setConfig({ entity: ENTITY, show_title: true });
-  const hass = makeHass(makeSlots());
-  hass.states[ENTITY].attributes.slot_resolution = 30;
-  card.hass = hass;
-  document.body.appendChild(card);
-  await card.updateComplete;
-
-  const target = pathFor(card, '10:30');
+  const card = await mountCard(15);
   calls.length = 0;
-  fire(target, 'click');
+  fire(card, 'pointerdown', pointFor(6, 0, 15));
+  fire(card, 'pointermove', pointFor(6, 45, 15));
+  fire(card, 'pointermove', pointFor(7, 30, 15));
+  fire(card, 'pointerup', pointFor(7, 30, 15));
   await sleep(50);
 
+  const painted = calls[0]?.data?.slots ?? [];
+  check('swipe fires exactly one service call', calls.length === 1, JSON.stringify(calls));
   check(
-    '30-minute view still toggles via click',
+    'swipe calls set_slots for 06:00 through 07:30',
+    calls[0]?.service === 'set_slots' &&
+      painted.length === 7 &&
+      painted.every((s) => s.isActive === true) &&
+      painted[0].hour === 6 &&
+      painted[0].minute === 0 &&
+      painted[6].hour === 7 &&
+      painted[6].minute === 30,
+    JSON.stringify(calls[0]?.data)
+  );
+  card.remove();
+}
+
+// --- 4. a swipe that starts on an active wedge erases ----------------------
+{
+  const active = makeSlots((hour) => hour === 12 || hour === 13);
+  const card = await mountCard(15, active);
+  calls.length = 0;
+  fire(card, 'pointerdown', pointFor(12, 0, 15));
+  fire(card, 'pointermove', pointFor(12, 45, 15));
+  fire(card, 'pointerup', pointFor(12, 45, 15));
+  await sleep(50);
+
+  const painted = calls[0]?.data?.slots ?? [];
+  check(
+    'swipe from an active wedge turns the crossed wedges off',
+    calls[0]?.service === 'set_slots' &&
+      painted.length === 4 &&
+      painted.every((s) => s.isActive === false && s.hour === 12),
+    JSON.stringify(calls[0]?.data)
+  );
+  card.remove();
+}
+
+// --- 5. ring shape per resolution -----------------------------------------
+{
+  const card = await mountCard(15);
+  check('15-minute ring draws 96 wedges', wedgePaths(card).length === 96, `${wedgePaths(card).length}`);
+  check('24 hour numbers render', labels(card, '13').length === 24, `${labels(card, '13').length}`);
+  card.remove();
+}
+
+{
+  const card = await mountCard(30);
+  check('30-minute ring draws 48 wedges', wedgePaths(card).length === 48, `${wedgePaths(card).length}`);
+
+  calls.length = 0;
+  fire(card, 'pointerdown', pointFor(10, 30, 30));
+  fire(card, 'pointerup', pointFor(10, 30, 30));
+  await sleep(50);
+  check(
+    '30-minute view toggles the half-hour wedge',
     calls.length === 1 &&
       calls[0].service === 'toggle_slot' &&
       calls[0].data.hour === 10 &&
@@ -258,34 +254,6 @@ function check(name, condition, detail = '') {
     JSON.stringify(calls)
   );
   card.remove();
-}
-
-// --- 6. editor exposes the quarter labels option ---------------------------
-{
-  // The card bundle inlines the editor, so the element is already registered
-  const editor = document.createElement('timer-24h-card-editor');
-  editor.setConfig({ entity: ENTITY, show_title: true });
-  editor.hass = makeHass(makeSlots());
-  document.body.appendChild(editor);
-  await editor.updateComplete;
-
-  const buttons = [...editor.shadowRoot.querySelectorAll('button')];
-  const always = buttons.find((b) => b.textContent.trim() === 'Always visible');
-  const onlyOnTap = buttons.find((b) => b.textContent.trim() === 'Only on tap');
-  check('editor shows both quarter label options', Boolean(always && onlyOnTap));
-
-  let emitted = null;
-  editor.addEventListener('config-changed', (e) => {
-    emitted = e.detail?.config;
-  });
-  onlyOnTap?.click();
-  await editor.updateComplete;
-  check(
-    "editor writes quarter_labels: 'selected' on click",
-    emitted?.quarter_labels === 'selected',
-    JSON.stringify(emitted)
-  );
-  editor.remove();
 }
 
 let failed = 0;

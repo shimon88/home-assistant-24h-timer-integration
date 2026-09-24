@@ -194,10 +194,10 @@ def card(x: int, title: str, subtitle: str, inner: str) -> str:
 def main() -> None:
     on = demo_on()
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 520" width="860" height="520" role="img" aria-label="Timer 24H 15 and 30 minute preview">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 520" width="860" height="520" role="img" aria-label="Shabbat Clock 15 and 30 minute preview">
   <rect width="860" height="520" fill="#f4f6f8"/>
-  {card(8, "Timer 24H", "30-minute view", clock(on, 30, None, 14, 0))}
-  {card(432, "Timer 24H", "15-minute view — quarter labels always on", clock(on, 15, None, 14, 0))}
+  {card(8, "Shabbat Clock", "30-minute view", clock(on, 30, None, 14, 0))}
+  {card(432, "Shabbat Clock", "15-minute view — quarter labels always on", clock(on, 15, None, 14, 0))}
 </svg>
 """
     root = Path(__file__).resolve().parents[2]
