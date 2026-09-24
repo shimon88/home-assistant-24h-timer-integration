@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-09-24
+
+### Fixed
+- 🔊 The timer now sends only one command per entity per minute tick. Turning an AC on used to send `climate.set_hvac_mode` and `climate.set_temperature` back to back; IR and cloud AC integrations build the second command from the entity state, which was still `off`, so the AC beeped twice and switched itself back off. The temperature is now sent later, only after the entity reports the requested mode and at least 10 seconds after the mode command.
+- 🔁 Commands that are already satisfied are no longer re-sent (for example the mode command when the AC is already in that mode), and retry counters are tracked per command instead of per entity.
+- 🔒 Schedule ticks, condition changes and service calls are serialized, so two overlapping triggers can no longer send the same command twice.
+
+## [2.0.1] - 2026-09-24
+
+### Fixed
+- 🔁 Saving the schedule or the timer's own control state no longer reloads the integration. A reload rebuilt the coordinator and reset the per-slot retry cap and external-override tracking, so a timer that had to retry, or that competed with another controller, could keep switching an entity on and off every few seconds. Changes made in the options flow still reload as before.
+
 ## [2.0.0] - 2026-09-23
 
 ### Changed

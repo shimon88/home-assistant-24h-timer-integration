@@ -178,6 +178,7 @@ def make_coordinator(
     coordinator._command_attempts = {}
     coordinator._external_overrides = set()
     coordinator._confirmed_on = set()
+    coordinator._control_lock = None
     coordinator._current_slot_key = None
     coordinator._last_should_be_on = None
     coordinator._time_slots = []
@@ -253,6 +254,40 @@ async def run_cases() -> None:
     check(
         "active slot + conditions true: climate is turned on",
         len(climate_on_calls(coord.hass)) == 1,
+        f"calls={coord.hass.services.calls}",
+    )
+
+    # --- one command per tick: mode first, temperature only after it lands --
+    coord = make_coordinator(
+        home_status=True, slot_active=True, climate_state="off"
+    )
+    coord.config_entry.options[CONF_ENTITY_SETTINGS] = {
+        CLIMATE_ID: {"hvac_mode": "cool", "temperature": 21}
+    }
+    coord.hass.states.set(CLIMATE_ID, "off", {"temperature": 24})
+    await coord._control_entities()
+    check(
+        "turn on climate: only the hvac_mode command is sent in that tick",
+        coord.hass.services.calls
+        == [("climate", "set_hvac_mode", {"entity_id": CLIMATE_ID, "hvac_mode": "cool"})],
+        f"calls={coord.hass.services.calls}",
+    )
+
+    coord.hass.services.calls.clear()
+    coord.hass.states.set(CLIMATE_ID, "cool", {"temperature": 24})
+    await coord._control_entities()
+    check(
+        "temperature is not chained while the mode command is still settling",
+        coord.hass.services.calls == [],
+        f"calls={coord.hass.services.calls}",
+    )
+
+    coord._last_command_times[f"{CLIMATE_ID}|hvac_mode"] = time.monotonic() - 60
+    await coord._control_entities()
+    check(
+        "after settle time: temperature command is sent once",
+        coord.hass.services.calls
+        == [("climate", "set_temperature", {"entity_id": CLIMATE_ID, "temperature": 21})],
         f"calls={coord.hass.services.calls}",
     )
 
@@ -384,14 +419,14 @@ async def run_cases() -> None:
     )
     for _ in range(3):
         await coord._control_entities()
-        coord._last_command_times[CLIMATE_ID] = time.monotonic() - 20
+        coord._last_command_times[f"{CLIMATE_ID}|hvac_mode"] = time.monotonic() - 20
     check(
         "retry cap: three on commands while climate stays off",
         len(climate_on_calls(coord.hass)) == 3,
         f"calls={coord.hass.services.calls}",
     )
     coord.hass.services.calls.clear()
-    coord._last_command_times[CLIMATE_ID] = time.monotonic() - 20
+    coord._last_command_times[f"{CLIMATE_ID}|hvac_mode"] = time.monotonic() - 20
     await coord._control_entities()
     check(
         "retry cap: fourth tick sends nothing",
