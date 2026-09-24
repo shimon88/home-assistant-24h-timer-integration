@@ -15,6 +15,20 @@ CONF_TIMER_OWNS_ENTITIES: Final = "timer_owns_entities"
 CONF_LAST_SLOT_KEY: Final = "last_slot_key"
 CONF_LAST_SHOULD_BE_ON: Final = "last_should_be_on"
 
+# Options the coordinator writes while running. A reload rebuilds the
+# coordinator and drops the per-slot retry and override tracking, so these
+# writes must not reload the config entry.
+RUNTIME_OPTION_KEYS: Final = frozenset(
+    {
+        "time_slots",
+        "enabled",
+        CONF_ENTITY_SETTINGS,
+        CONF_TIMER_OWNS_ENTITIES,
+        CONF_LAST_SLOT_KEY,
+        CONF_LAST_SHOULD_BE_ON,
+    }
+)
+
 # Defaults
 DEFAULT_NAME: Final = "Shabbat Clock"
 DEFAULT_HOME_LOGIC: Final = "OR"

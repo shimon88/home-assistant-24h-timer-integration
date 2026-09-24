@@ -1,6 +1,7 @@
 """DataUpdateCoordinator for Shabbat Clock integration."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 import logging
 import time
@@ -36,6 +37,10 @@ _LOGGER = logging.getLogger(__name__)
 # Do not re-send the same command while the entity state is still catching up.
 _CONTROL_DEBOUNCE_SECONDS = 15
 _CONTROL_MAX_ATTEMPTS = 3
+# Temperature/percentage tuning waits this long after the power/mode command.
+# IR and cloud AC integrations build the next command from the entity state, so
+# a follow-up sent before the state catches up can re-send an "off" payload.
+_CONTROL_SETTLE_SECONDS = 10
 
 
 class ShabbatClockCoordinator(DataUpdateCoordinator):
@@ -55,6 +60,9 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
         self._command_attempts: dict[str, int] = {}
         self._external_overrides: set[str] = set()
         self._confirmed_on: set[str] = set()
+        # Schedule ticks, condition changes and service calls can all request
+        # control at once. Serialize them so an entity gets one command at a time.
+        self._control_lock: asyncio.Lock | None = asyncio.Lock()
         # True only after this timer turned entities on while conditions were met.
         # An inactive slot may turn them off later even if a condition dropped.
         # It must not turn off entities the timer never activated (for example a
@@ -151,74 +159,117 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
 
         return desired
 
-    async def _async_turn_on_entity(self, entity_id: str, desired: dict[str, Any]) -> None:
-        """Turn on an entity with domain-specific settings."""
+    def _next_control_step(
+        self, entity_id: str, entity: Any, desired: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]] | None:
+        """Return the single next command needed to reach the desired state.
+
+        Only one command per entity per tick. Power/mode comes first, tuning
+        (temperature, fan percentage) only after the entity reports the mode.
+        """
         domain = entity_id.split(".", 1)[0]
+        should_be_on = bool(desired.get("on"))
+        is_on = self._is_entity_on(entity_id, entity)
+
+        if not should_be_on:
+            if not is_on:
+                return None
+            if domain == "climate":
+                return "hvac_mode", {"hvac_mode": "off"}
+            return "turn_off", {}
 
         if domain == "climate":
-            hvac_mode = desired.get("hvac_mode", DEFAULT_CLIMATE_HVAC_MODE)
-            temperature = desired.get("temperature", DEFAULT_CLIMATE_TEMPERATURE)
-
-            if hvac_mode:
-                await self.hass.services.async_call(
-                    "climate",
-                    "set_hvac_mode",
-                    {"entity_id": entity_id, "hvac_mode": hvac_mode},
-                    blocking=False,
-                )
-
-            if temperature is not None and hvac_mode not in (None, "off", "fan_only"):
-                await self.hass.services.async_call(
-                    "climate",
-                    "set_temperature",
-                    {"entity_id": entity_id, "temperature": temperature},
-                    blocking=False,
-                )
-            return
+            hvac_mode = desired.get("hvac_mode") or DEFAULT_CLIMATE_HVAC_MODE
+            if entity.state != hvac_mode:
+                return "hvac_mode", {"hvac_mode": hvac_mode}
+            if hvac_mode in ("off", "fan_only"):
+                return None
+            temperature = desired.get("temperature")
+            if temperature is None:
+                return None
+            current = entity.attributes.get("temperature")
+            try:
+                if current is not None and abs(float(current) - float(temperature)) <= 0.4:
+                    return None
+            except (TypeError, ValueError):
+                return None
+            return "temperature", {"temperature": temperature}
 
         if domain == "fan":
             percentage = desired.get("percentage", DEFAULT_FAN_PERCENTAGE)
-            if percentage is not None:
-                try:
-                    await self.hass.services.async_call(
-                        "fan",
-                        "set_percentage",
-                        {"entity_id": entity_id, "percentage": int(percentage)},
-                        blocking=False,
-                    )
-                    return
-                except Exception as err:
-                    _LOGGER.warning(
-                        "fan.set_percentage failed for %s (%s), falling back to turn_on",
-                        entity_id,
-                        err,
-                    )
+            if not is_on:
+                if percentage is not None:
+                    return "percentage", {"percentage": percentage}
+                return "turn_on", {}
+            if percentage is None:
+                return None
+            current = entity.attributes.get("percentage")
+            try:
+                if current is not None and abs(int(current) - int(percentage)) <= 1:
+                    return None
+            except (TypeError, ValueError):
+                return None
+            return "percentage", {"percentage": percentage}
 
+        if not is_on:
+            return "turn_on", {}
+        return None
+
+    def _step_is_tuning(self, step: str) -> bool:
+        """Return True for commands that only refine an already-on entity."""
+        return step in ("temperature", "percentage")
+
+    async def _async_send_step(
+        self, entity_id: str, step: str, payload: dict[str, Any]
+    ) -> None:
+        """Send exactly one service call for the given control step."""
+        if step == "hvac_mode":
+            await self.hass.services.async_call(
+                "climate",
+                "set_hvac_mode",
+                {"entity_id": entity_id, "hvac_mode": payload["hvac_mode"]},
+                blocking=True,
+            )
+            return
+
+        if step == "temperature":
+            await self.hass.services.async_call(
+                "climate",
+                "set_temperature",
+                {"entity_id": entity_id, "temperature": payload["temperature"]},
+                blocking=True,
+            )
+            return
+
+        if step == "percentage":
+            try:
+                await self.hass.services.async_call(
+                    "fan",
+                    "set_percentage",
+                    {"entity_id": entity_id, "percentage": int(payload["percentage"])},
+                    blocking=True,
+                )
+                return
+            except Exception as err:
+                _LOGGER.warning(
+                    "fan.set_percentage failed for %s (%s), falling back to turn_on",
+                    entity_id,
+                    err,
+                )
             await self.hass.services.async_call(
                 "homeassistant",
                 "turn_on",
                 {"entity_id": entity_id},
-                blocking=False,
+                blocking=True,
             )
             return
 
-        await self.hass.services.async_call(
-            "homeassistant",
-            "turn_on",
-            {"entity_id": entity_id},
-            blocking=False,
-        )
-
-    async def _async_turn_off_entity(self, entity_id: str) -> None:
-        """Turn off an entity with domain-aware service calls."""
-        domain = entity_id.split(".", 1)[0]
-
-        if domain == "climate":
+        if step == "turn_on":
             await self.hass.services.async_call(
-                "climate",
-                "set_hvac_mode",
-                {"entity_id": entity_id, "hvac_mode": "off"},
-                blocking=False,
+                "homeassistant",
+                "turn_on",
+                {"entity_id": entity_id},
+                blocking=True,
             )
             return
 
@@ -226,7 +277,7 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
             "homeassistant",
             "turn_off",
             {"entity_id": entity_id},
-            blocking=False,
+            blocking=True,
         )
 
     def _empty_slots(self) -> list[dict[str, Any]]:
@@ -444,6 +495,15 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
         self._persist_control_state()
 
     async def _control_entities(self) -> None:
+        """Control entities, serialized so overlapping triggers cannot double-send."""
+        lock = self._control_lock
+        if lock is None:
+            await self._async_control_entities()
+            return
+        async with lock:
+            await self._async_control_entities()
+
+    async def _async_control_entities(self) -> None:
         """Control entities based on time slots and activation conditions."""
         if not self._enabled:
             _LOGGER.debug("Timer is disabled, skipping entity control")
@@ -477,10 +537,11 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
                 continue
 
             desired = self._build_desired_control(entity_id, should_be_on)
+            step = self._next_control_step(entity_id, entity, desired)
 
-            if self._entity_matches_desired(entity_id, entity, desired):
+            if step is None:
                 self._last_controlled_states[entity_id] = desired
-                self._command_attempts.pop(entity_id, None)
+                self._clear_attempts(entity_id)
                 if should_be_on:
                     self._confirmed_on.add(entity_id)
                     if self._home_status:
@@ -498,42 +559,48 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
             if entity_id in self._external_overrides:
                 continue
 
-            last_controlled_state = self._last_controlled_states.get(entity_id)
-            last_command_at = self._last_command_times.get(entity_id, 0.0)
-            if (
-                last_controlled_state == desired
-                and (now_mono - last_command_at) < _CONTROL_DEBOUNCE_SECONDS
-            ):
+            step_name, payload = step
+            step_key = f"{entity_id}|{step_name}"
+
+            # Never chain a tuning command straight after the power/mode command:
+            # the entity state must report the new mode first.
+            if self._step_is_tuning(step_name):
+                last_power_at = self._last_command_times.get(
+                    f"{entity_id}|hvac_mode", 0.0
+                )
+                if last_power_at and (now_mono - last_power_at) < _CONTROL_SETTLE_SECONDS:
+                    continue
+
+            last_command_at = self._last_command_times.get(step_key, 0.0)
+            if last_command_at and (now_mono - last_command_at) < _CONTROL_DEBOUNCE_SECONDS:
                 continue
 
-            if self._command_attempts.get(entity_id, 0) >= _CONTROL_MAX_ATTEMPTS:
+            if self._command_attempts.get(step_key, 0) >= _CONTROL_MAX_ATTEMPTS:
                 _LOGGER.debug(
-                    "Retry cap reached for %s this slot (desired=%s)",
+                    "Retry cap reached for %s this slot (step=%s, desired=%s)",
                     entity_id,
+                    step_name,
                     desired,
                 )
                 continue
 
             try:
-                if should_be_on:
-                    await self._async_turn_on_entity(entity_id, desired)
-                    if self._home_status:
-                        self._set_timer_owns_entities(True)
-                else:
-                    await self._async_turn_off_entity(entity_id)
+                await self._async_send_step(entity_id, step_name, payload)
+                if should_be_on and self._home_status:
+                    self._set_timer_owns_entities(True)
 
                 _LOGGER.info(
-                    "%s %s based on timer schedule (desired=%s, state=%s)",
-                    "Turned on" if should_be_on else "Turned off",
+                    "Sent %s to %s based on timer schedule (payload=%s, state=%s)",
+                    step_name,
                     entity_id,
-                    desired,
+                    payload,
                     entity.state,
                 )
 
                 self._last_controlled_states[entity_id] = desired
-                self._last_command_times[entity_id] = now_mono
-                self._command_attempts[entity_id] = (
-                    self._command_attempts.get(entity_id, 0) + 1
+                self._last_command_times[step_key] = now_mono
+                self._command_attempts[step_key] = (
+                    self._command_attempts.get(step_key, 0) + 1
                 )
 
             except Exception as err:
@@ -581,6 +648,12 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
         self._timer_owns_entities = owns
         self._persist_control_state()
 
+    def _clear_attempts(self, entity_id: str) -> None:
+        """Drop the retry counters of every control step of an entity."""
+        prefix = f"{entity_id}|"
+        for key in [k for k in self._command_attempts if k.startswith(prefix)]:
+            del self._command_attempts[key]
+
     def _clear_control_memory(self, entity_id: str | None = None) -> None:
         """Forget last commanded state so the next tick can retry."""
         if entity_id is None:
@@ -590,9 +663,11 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
             self._external_overrides.clear()
             self._confirmed_on.clear()
             return
+        prefix = f"{entity_id}|"
         self._last_controlled_states.pop(entity_id, None)
-        self._last_command_times.pop(entity_id, None)
-        self._command_attempts.pop(entity_id, None)
+        for key in [k for k in self._last_command_times if k.startswith(prefix)]:
+            del self._last_command_times[key]
+        self._clear_attempts(entity_id)
         self._external_overrides.discard(entity_id)
         self._confirmed_on.discard(entity_id)
 

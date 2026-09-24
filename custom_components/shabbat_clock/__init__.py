@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
 import voluptuous as vol
 
@@ -29,6 +30,7 @@ from .const import (
     ATTR_TARGET_ENTITY_ID,
     ATTR_TEMPERATURE,
     DOMAIN,
+    RUNTIME_OPTION_KEYS,
     SERVICE_CLEAR_ALL,
     SERVICE_SET_ACTIVATION_CONDITIONS,
     SERVICE_SET_ENABLED,
@@ -150,6 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
+        "reload_signature": _reload_signature(entry),
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -163,8 +166,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _reload_signature(entry: ConfigEntry) -> dict[str, Any]:
+    """Return the options that require a full reload when they change."""
+    return {
+        key: value
+        for key, value in entry.options.items()
+        if key not in RUNTIME_OPTION_KEYS
+    }
+
+
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options."""
+    signature = _reload_signature(entry)
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+
+    # The coordinator writes schedule and control state to the options itself and
+    # has already applied it in memory. Reloading there would rebuild the
+    # coordinator and reset the per-slot retry and override tracking.
+    if entry_data is not None and entry_data.get("reload_signature") == signature:
+        return
+
+    if entry_data is not None:
+        entry_data["reload_signature"] = signature
+
     # Reload will cleanup old listeners and setup new ones
     await hass.config_entries.async_reload(entry.entry_id)
 
