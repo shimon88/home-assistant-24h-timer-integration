@@ -22,7 +22,7 @@ HACS השתנה בשנים האחרונות. היום **אין צורך להגי
    - **Repository**: `https://github.com/davidss20/home-assistant-24h-timer-integration`
    - **Category**: `Integration`
 6. לחץ **Add**
-7. חפש "Timer 24H" ב-HACS והתקן!
+7. חפש "Shabbat Clock" ב-HACS והתקן!
 
 **זה הדרך הכי מהירה להתחיל!** 🚀
 
@@ -60,14 +60,14 @@ HACS השתנה בשנים האחרונות. היום **אין צורך להגי
 
 2. **צור תיקייה חדשה:**
    ```
-   brands/custom_integrations/timer_24h/
+   brands/custom_integrations/shabbat_clock/
    ```
 
 3. **הוסף קובץ `manifest.json`:**
    ```json
    {
-     "domain": "timer_24h",
-     "name": "Timer 24H",
+     "domain": "shabbat_clock",
+     "name": "Shabbat Clock",
      "documentation": "https://github.com/davidss20/home-assistant-24h-timer-integration",
      "codeowners": ["@davidss20"]
    }
@@ -78,8 +78,8 @@ HACS השתנה בשנים האחרונות. היום **אין צורך להגי
    - או: `logo.png` (256x256 pixels)
 
 5. **צור Pull Request:**
-   - כותרת: `Add Timer 24H integration`
-   - תיאור: "Adding Timer 24H custom integration to brands"
+   - כותרת: `Add Shabbat Clock integration`
+   - תיאור: "Adding Shabbat Clock custom integration to brands"
 
 6. **המתן לאישור** (בדרך כלל כמה ימים)
 
@@ -107,7 +107,7 @@ HACS השתנה בשנים האחרונות. היום **אין צורך להגי
    ```
 
 4. **צור Pull Request:**
-   - כותרת: `Add Timer 24H Integration`
+   - כותרת: `Add Shabbat Clock Integration`
    - תיאור: תיאור קצר של האינטגרציה
 
 ### **דרך 2: טופס הגשה (חדש)**

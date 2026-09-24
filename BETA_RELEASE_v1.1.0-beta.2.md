@@ -1,4 +1,4 @@
-# Timer 24H v1.1.0-beta.2 🧪
+# Shabbat Clock v1.1.0-beta.2 🧪
 
 ## 🎛️ New Feature: Enable/Disable Timer Switch
 
@@ -19,7 +19,7 @@ This beta release adds a powerful new optional feature - the ability to enable o
 Add this to your Lovelace card configuration:
 
 ```yaml
-type: custom:timer-24h-card
+type: custom:shabbat-clock-card
 entity: sensor.your_timer
 show_enable_switch: true  # Show the toggle switch
 ```
@@ -28,7 +28,7 @@ show_enable_switch: true  # Show the toggle switch
 Use the new service to control the timer programmatically:
 
 ```yaml
-service: timer_24h.set_enabled
+service: shabbat_clock.set_enabled
 data:
   entity_id: sensor.your_timer
   enabled: false  # Disable timer (or true to enable)
@@ -44,15 +44,15 @@ data:
 
 #### Via HACS (Recommended)
 1. Go to HACS → Integrations
-2. Find **Timer 24H**
+2. Find **Shabbat Clock**
 3. Click ⋮ (three dots) → Redownload
 4. Select version: **v1.1.0-beta.2**
 5. Click Download
 6. Restart Home Assistant
 
 #### Manual Installation
-1. Download `timer-24h-v1.1.0-beta.2.zip` from this release
-2. Extract to `custom_components/timer_24h/`
+1. Download `shabbat-clock-v1.1.0-beta.2.zip` from this release
+2. Extract to `custom_components/shabbat_clock/`
 3. Restart Home Assistant
 
 ### 🧪 Testing Checklist
@@ -64,7 +64,7 @@ Please help test this new feature:
 - [ ] Timer stops controlling entities when disabled
 - [ ] Timer resumes controlling entities when enabled
 - [ ] State persists after Home Assistant restart
-- [ ] Service `timer_24h.set_enabled` works in automations
+- [ ] Service `shabbat_clock.set_enabled` works in automations
 - [ ] All existing timer functionality still works correctly
 - [ ] No errors in Home Assistant logs
 
@@ -72,14 +72,14 @@ Please help test this new feature:
 
 **Added:**
 - 🎛️ Optional enable/disable toggle switch in card
-- 🔧 New service: `timer_24h.set_enabled` for automation integration
+- 🔧 New service: `shabbat_clock.set_enabled` for automation integration
 - 💾 State persistence across restarts
 - 🌐 Hebrew and English translations
 
 **Technical Details:**
 - Backend: New `enabled` state in coordinator with persistence
 - Frontend: New toggle UI with modern styling
-- Service: `timer_24h.set_enabled` with proper schema validation
+- Service: `shabbat_clock.set_enabled` with proper schema validation
 - Editor: New checkbox to show/hide the toggle
 
 ### ⚠️ Beta Notice
@@ -101,7 +101,7 @@ Include:
 
 ### 🎉 Thank You!
 
-Thank you for testing this beta release and helping make Timer 24H better!
+Thank you for testing this beta release and helping make Shabbat Clock better!
 
 ---
 

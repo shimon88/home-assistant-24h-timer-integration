@@ -4,11 +4,11 @@ toggle_slot:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
     hour:
       name: Hour
@@ -41,11 +41,11 @@ toggle_hour:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
     hour:
       name: Hour
@@ -64,11 +64,11 @@ set_slots:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
     slots:
       name: Slots
@@ -84,11 +84,11 @@ clear_all:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
 
 set_enabled:
@@ -97,11 +97,11 @@ set_enabled:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
     enabled:
       name: Enabled
@@ -116,11 +116,11 @@ set_entity_settings:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
     target_entity_id:
       name: Target entity
@@ -166,11 +166,11 @@ set_activation_conditions:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
     home_sensors:
       name: Activation conditions
@@ -205,11 +205,11 @@ set_slot_resolution:
   fields:
     entity_id:
       name: Timer entity
-      description: The Timer 24H sensor entity.
+      description: The Shabbat Clock sensor entity.
       required: true
       selector:
         entity:
-          integration: timer_24h
+          integration: shabbat_clock
           domain: sensor
     slot_resolution:
       name: Slot interval

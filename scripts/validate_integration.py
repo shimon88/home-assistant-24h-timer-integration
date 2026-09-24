@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INTEGRATION = ROOT / "custom_components" / "timer_24h"
+INTEGRATION = ROOT / "custom_components" / "shabbat_clock"
 MANIFEST_PATH = INTEGRATION / "manifest.json"
 INIT_PATH = INTEGRATION / "__init__.py"
 SERVICES_YAML = INTEGRATION / "services.yaml"
@@ -116,7 +116,7 @@ def check_versions(manifest: dict) -> None:
 
 def check_dist() -> None:
     dist = INTEGRATION / "dist"
-    for name in ("timer-24h-card.js", "timer-24h-card-editor.js"):
+    for name in ("shabbat-clock-card.js", "shabbat-clock-card-editor.js"):
         path = dist / name
         if not path.exists():
             fail(f"Missing required HACS artifact: {path.relative_to(ROOT)}")

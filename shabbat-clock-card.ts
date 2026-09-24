@@ -11,15 +11,11 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCard, LovelaceCardConfig } from 'custom-card-helpers';
 
 // Types
-// 'always' shows 15/30/45 on every hour, 'selected' only on the tapped hour
-type QuarterLabelsMode = 'always' | 'selected';
-
-interface Timer24HCardConfig extends LovelaceCardConfig {
+interface ShabbatClockCardConfig extends LovelaceCardConfig {
   entity: string;
   show_title?: boolean;
   custom_title?: string;
   show_enable_switch?: boolean;
-  quarter_labels?: QuarterLabelsMode;
 }
 
 interface TimeSlot {
@@ -38,10 +34,10 @@ interface EntitySettingsMap {
   [entityId: string]: EntitySettings;
 }
 
-@customElement('timer-24h-card')
-export class Timer24HCard extends LitElement implements LovelaceCard {
+@customElement('shabbat-clock-card')
+export class ShabbatClockCard extends LitElement implements LovelaceCard {
   @property({ attribute: false }) public hass!: HomeAssistant;
-  @state() private config!: Timer24HCardConfig;
+  @state() private config!: ShabbatClockCardConfig;
   @state() private currentTime: Date = new Date();
   @state() private showEntitiesDialog: boolean = false;
   @state() private showConditionsDialog: boolean = false;
@@ -49,15 +45,23 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
   @state() private draftConditionLogic: 'OR' | 'AND' = 'OR';
   @state() private conditionsSaving: boolean = false;
   @state() private selectedHour: number | null = null;
+  /** Slots painted by the current swipe, keyed by `hour:minute` */
+  @state() private dragOverrides: Record<string, boolean> | null = null;
 
   /** Hold duration that turns a quarter tap into a whole-hour toggle */
   private static readonly LONG_PRESS_MS = 500;
-  
+  private static readonly CENTER = 200;
+  private static readonly RING_INNER = 50;
+  private static readonly RING_OUTER = 180;
+
   private updateInterval?: number;
   private clickTimeout?: number;
   private longPressTimeout?: number;
-  private pressedSlot: { hour: number; minute: number } | null = null;
   private longPressHandled: boolean = false;
+  private dragPointerId: number | null = null;
+  private dragStartSector: number | null = null;
+  private dragPaintValue: boolean = false;
+  private dragMoved: boolean = false;
 
   public static getLayoutOptions() {
     return {
@@ -73,11 +77,11 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
   }
 
   public static async getConfigElement() {
-    await import('./timer-24h-card-editor.js');
-    return document.createElement('timer-24h-card-editor');
+    await import('./shabbat-clock-card-editor.js');
+    return document.createElement('shabbat-clock-card-editor');
   }
 
-  public static getStubConfig(hass?: HomeAssistant): Timer24HCardConfig {
+  public static getStubConfig(hass?: HomeAssistant): ShabbatClockCardConfig {
     const entity = hass
       ? Object.keys(hass.states).find((entityId) => {
           const state = hass.states[entityId];
@@ -97,21 +101,16 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     super();
   }
 
-  public setConfig(config: Timer24HCardConfig): void {
+  public setConfig(config: ShabbatClockCardConfig): void {
     if (!config) {
       throw new Error('Invalid configuration: config is required');
     }
 
     this.config = {
       show_title: true,
-      quarter_labels: 'always',
       ...config,
       entity: config.entity || '',
     };
-  }
-
-  private getQuarterLabelsMode(): QuarterLabelsMode {
-    return this.config?.quarter_labels === 'selected' ? 'selected' : 'always';
   }
 
   protected shouldUpdate(changedProps: PropertyValues): boolean {
@@ -123,7 +122,8 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
       changedProps.has('draftConditionSensors') ||
       changedProps.has('draftConditionLogic') ||
       changedProps.has('conditionsSaving') ||
-      changedProps.has('selectedHour')
+      changedProps.has('selectedHour') ||
+      changedProps.has('dragOverrides')
     ) {
       return true;
     }
@@ -270,6 +270,58 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     return Math.floor(this.currentTime.getMinutes() / 15) * 15;
   }
 
+  /** Number of wedges around the ring: 48 half-hours or 96 quarters */
+  private getSectorCount(): number {
+    return this.getSlotResolution() === 15 ? 96 : 48;
+  }
+
+  /**
+   * Map a wedge to the stored quarter slots it covers.
+   *
+   * The backend always keeps 96 quarter slots, so a half-hour wedge owns two
+   * of them.
+   */
+  private getSectorSlot(index: number): { hour: number; minutes: number[] } {
+    if (this.getSlotResolution() === 15) {
+      return { hour: Math.floor(index / 4), minutes: [(index % 4) * 15] };
+    }
+    return {
+      hour: Math.floor(index / 2),
+      minutes: index % 2 === 0 ? [0, 15] : [30, 45],
+    };
+  }
+
+  private getCurrentSector(): number {
+    const hour = this.currentTime.getHours();
+    if (this.getSlotResolution() === 15) {
+      return hour * 4 + this.currentQuarterMinute() / 15;
+    }
+    return hour * 2 + (this.currentTime.getMinutes() >= 30 ? 1 : 0);
+  }
+
+  private slotKey(hour: number, minute: number): string {
+    return `${hour}:${minute}`;
+  }
+
+  /** Server slots with the in-progress swipe painted on top */
+  private getSlotStateMap(timeSlots: TimeSlot[]): Map<string, boolean> {
+    const map = new Map<string, boolean>();
+    for (const slot of timeSlots) {
+      map.set(this.slotKey(slot.hour, slot.minute), slot.isActive);
+    }
+    if (this.dragOverrides) {
+      for (const [key, value] of Object.entries(this.dragOverrides)) {
+        map.set(key, value);
+      }
+    }
+    return map;
+  }
+
+  private isSectorActive(index: number, states: Map<string, boolean>): boolean {
+    const { hour, minutes } = this.getSectorSlot(index);
+    return minutes.every((minute) => states.get(this.slotKey(hour, minute)) === true);
+  }
+
   private getHomeStatus(): boolean {
     const entity = this.getEntityState();
     if (!entity) return true;
@@ -284,8 +336,8 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     
     // Otherwise use entity's friendly name
     const entity = this.getEntityState();
-    if (!entity) return 'Timer 24H';
-    return entity.attributes.friendly_name || 'Timer 24H';
+    if (!entity) return 'Shabbat Clock';
+    return entity.attributes.friendly_name || 'Shabbat Clock';
   }
 
   private isEntityOn(entityId: string): boolean {
@@ -450,84 +502,198 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     return icons[mode] || 'mdi:thermostat';
   }
 
-  private handleSlotClick(event: Event, hour: number, minute: number): void {
-    // Stop event propagation to prevent multiple triggers
-    event.stopPropagation();
-    event.preventDefault();
-    
-    const key = `${hour}:${String(minute).padStart(2, '0')}`;
-    console.log(`👆 Click detected on ${key}`);
-    
-    // Debounce - prevent multiple rapid clicks
-    if (this.clickTimeout) {
-      console.log(`⏸️ Debounced - ignoring click on ${key}`);
-      return; // Ignore if already processing a click
+  private getRingSvg(): SVGSVGElement | null {
+    return this.renderRoot?.querySelector('svg.timer-svg') as SVGSVGElement | null;
+  }
+
+  /** Keep the swipe alive when the finger leaves the wedge it started on */
+  private capturePointer(pointerId: number, capture: boolean): void {
+    const svgElement = this.getRingSvg();
+    if (!svgElement) return;
+    try {
+      if (capture) {
+        svgElement.setPointerCapture(pointerId);
+      } else {
+        svgElement.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // Capture is best effort: some browsers reject stale pointer ids
     }
-    
-    this.clickTimeout = window.setTimeout(() => {
-      this.clickTimeout = undefined;
-    }, 300); // 300ms debounce
-    
-    // Call the toggle function
-    console.log(`✅ Processing click on ${key}`);
-    this.toggleTimeSlot(hour, minute);
+  }
+
+  /** Wedge under the pointer, or null when the pointer is off the ring */
+  private getSectorFromPointer(event: PointerEvent): number | null {
+    const svgElement = this.getRingSvg();
+    const screenMatrix = svgElement?.getScreenCTM();
+    if (!svgElement || !screenMatrix) return null;
+
+    const point = svgElement.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const local = point.matrixTransform(screenMatrix.inverse());
+
+    const dx = local.x - ShabbatClockCard.CENTER;
+    const dy = local.y - ShabbatClockCard.CENTER;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < ShabbatClockCard.RING_INNER || distance > ShabbatClockCard.RING_OUTER) {
+      return null;
+    }
+
+    const count = this.getSectorCount();
+    // The ring starts at 12 o'clock, so shift atan2 by a quarter turn
+    const angle = (((Math.atan2(dy, dx) * 180) / Math.PI + 90) % 360 + 360) % 360;
+    return Math.floor(angle / (360 / count)) % count;
+  }
+
+  /** Paint every wedge on the shortest arc between two sectors */
+  private buildDragOverrides(from: number, to: number, value: boolean): Record<string, boolean> {
+    const count = this.getSectorCount();
+    const forward = (to - from + count) % count;
+    const backward = (from - to + count) % count;
+    const step = forward <= backward ? 1 : -1;
+    const length = Math.min(forward, backward);
+
+    const overrides: Record<string, boolean> = {};
+    for (let offset = 0; offset <= length; offset++) {
+      const index = (from + step * offset + count) % count;
+      const { hour, minutes } = this.getSectorSlot(index);
+      for (const minute of minutes) {
+        overrides[this.slotKey(hour, minute)] = value;
+      }
+    }
+    return overrides;
   }
 
   /**
-   * Start tracking a press on a quarter in the 15-minute view.
+   * Start a swipe on the ring.
    *
-   * A short tap toggles only that quarter; holding for LONG_PRESS_MS toggles
-   * the whole hour. The actual toggle happens on release (or when the long
-   * press timer fires), so a single gesture never does both.
+   * The first wedge decides the paint value, so dragging over already active
+   * wedges clears them instead of flipping each one. Holding still for
+   * LONG_PRESS_MS toggles the whole hour.
    */
-  private handleQuarterPointerDown(event: Event, hour: number, minute: number): void {
-    event.stopPropagation();
+  private handleRingPointerDown(event: PointerEvent): void {
+    const index = this.getSectorFromPointer(event);
+    if (index === null) return;
 
-    this.pressedSlot = { hour, minute };
+    event.preventDefault();
+    this.capturePointer(event.pointerId, true);
+
+    const { hour } = this.getSectorSlot(index);
+    const value = !this.isSectorActive(index, this.getSlotStateMap(this.getTimeSlots()));
+
+    this.dragPointerId = event.pointerId;
+    this.dragStartSector = index;
+    this.dragPaintValue = value;
+    this.dragMoved = false;
     this.longPressHandled = false;
+    this.selectedHour = hour;
+    this.dragOverrides = this.buildDragOverrides(index, index, value);
 
     window.clearTimeout(this.longPressTimeout);
     this.longPressTimeout = window.setTimeout(() => {
       this.longPressTimeout = undefined;
-      if (!this.pressedSlot) return;
+      if (this.dragStartSector === null || this.dragMoved) return;
       this.longPressHandled = true;
-      this.selectedHour = hour;
+      this.dragOverrides = null;
       this.toggleWholeHour(hour);
-    }, Timer24HCard.LONG_PRESS_MS);
+    }, ShabbatClockCard.LONG_PRESS_MS);
   }
 
-  private handleQuarterPointerUp(event: Event): void {
-    window.clearTimeout(this.longPressTimeout);
-    this.longPressTimeout = undefined;
+  private handleRingPointerMove(event: PointerEvent): void {
+    if (this.dragStartSector === null || event.pointerId !== this.dragPointerId) return;
 
-    const slot = this.pressedSlot;
-    this.pressedSlot = null;
+    const index = this.getSectorFromPointer(event);
+    if (index === null || this.longPressHandled) return;
 
-    // The long press already toggled the hour - ignore the release
-    if (this.longPressHandled) {
-      this.longPressHandled = false;
-      event.preventDefault();
-      return;
+    if (index !== this.dragStartSector) {
+      this.dragMoved = true;
+      window.clearTimeout(this.longPressTimeout);
+      this.longPressTimeout = undefined;
     }
 
-    if (!slot) return;
-
-    if (this.clickTimeout) {
-      return;
-    }
-    this.clickTimeout = window.setTimeout(() => {
-      this.clickTimeout = undefined;
-    }, 300);
-
-    this.selectedHour = slot.hour;
-    this.toggleTimeSlot(slot.hour, slot.minute);
+    this.dragOverrides = this.buildDragOverrides(
+      this.dragStartSector,
+      index,
+      this.dragPaintValue
+    );
   }
 
-  private handleQuarterPointerCancel(): void {
+  private async handleRingPointerUp(event: PointerEvent): Promise<void> {
+    if (this.dragStartSector === null || event.pointerId !== this.dragPointerId) return;
+
     window.clearTimeout(this.longPressTimeout);
     this.longPressTimeout = undefined;
-    this.pressedSlot = null;
+    this.capturePointer(event.pointerId, false);
+
+    const startSector = this.dragStartSector;
+    const overrides = this.dragOverrides;
+    const moved = this.dragMoved;
+    const longPressed = this.longPressHandled;
+
+    this.dragStartSector = null;
+    this.dragPointerId = null;
+    this.dragMoved = false;
     this.longPressHandled = false;
+
+    if (longPressed) {
+      this.dragOverrides = null;
+      return;
+    }
+
+    try {
+      if (!moved) {
+        if (this.clickTimeout) return;
+        this.clickTimeout = window.setTimeout(() => {
+          this.clickTimeout = undefined;
+        }, 300);
+
+        const { hour, minutes } = this.getSectorSlot(startSector);
+        await this.toggleTimeSlot(hour, minutes[0]);
+      } else if (overrides) {
+        await this.applyPaintedSlots(overrides);
+      }
+    } finally {
+      this.dragOverrides = null;
+    }
+  }
+
+  private handleRingPointerCancel(): void {
+    window.clearTimeout(this.longPressTimeout);
+    this.longPressTimeout = undefined;
+    this.dragStartSector = null;
+    this.dragPointerId = null;
+    this.dragMoved = false;
+    this.longPressHandled = false;
+    this.dragOverrides = null;
+  }
+
+  /** Send the whole swipe as a single set_slots call */
+  private async applyPaintedSlots(overrides: Record<string, boolean>): Promise<void> {
+    if (!this.hass || !this.config.entity) return;
+
+    const stored = new Map<string, boolean>();
+    for (const slot of this.getTimeSlots()) {
+      stored.set(this.slotKey(slot.hour, slot.minute), slot.isActive);
+    }
+
+    const slots = Object.entries(overrides)
+      .filter(([key, value]) => stored.get(key) !== value)
+      .map(([key, isActive]) => {
+        const [hour, minute] = key.split(':').map(Number);
+        return { hour, minute, isActive };
+      });
+
+    if (slots.length === 0) return;
+
+    try {
+      console.log(`🎯 Paint ${slots.length} slots`);
+      await this.hass.callService('shabbat_clock', 'set_slots', {
+        entity_id: this.config.entity,
+        slots,
+      });
+    } catch (error) {
+      console.error('❌ Failed to paint time slots:', error);
+    }
   }
 
   private async toggleWholeHour(hour: number): Promise<void> {
@@ -535,7 +701,7 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
 
     try {
       console.log(`🎯 Toggle whole hour: ${hour}`);
-      await this.hass.callService('timer_24h', 'toggle_hour', {
+      await this.hass.callService('shabbat_clock', 'toggle_hour', {
         entity_id: this.config.entity,
         hour: hour,
       });
@@ -553,7 +719,7 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
       console.log(`🎯 Toggle slot: ${key}`);
       
       // Call service - NO optimistic updates
-      await this.hass.callService('timer_24h', 'toggle_slot', {
+      await this.hass.callService('shabbat_clock', 'toggle_slot', {
         entity_id: this.config.entity,
         hour: hour,
         minute: minute,
@@ -586,7 +752,7 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     try {
       console.log(`🔄 Setting enabled to: ${enabled}`);
       
-      await this.hass.callService('timer_24h', 'set_enabled', {
+      await this.hass.callService('shabbat_clock', 'set_enabled', {
         entity_id: this.config.entity,
         enabled: enabled,
       });
@@ -604,7 +770,7 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     if (!this.hass || !this.config.entity) return;
 
     try {
-      await this.hass.callService('timer_24h', 'set_entity_settings', {
+      await this.hass.callService('shabbat_clock', 'set_entity_settings', {
         entity_id: this.config.entity,
         target_entity_id: targetEntityId,
         ...updates,
@@ -769,7 +935,7 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     if (!this.hass || !this.config?.entity || this.conditionsSaving) return;
     this.conditionsSaving = true;
     try {
-      await this.hass.callService('timer_24h', 'set_activation_conditions', {
+      await this.hass.callService('shabbat_clock', 'set_activation_conditions', {
         entity_id: this.config.entity,
         home_sensors: this.draftConditionSensors,
         home_logic: this.draftConditionLogic,
@@ -1139,32 +1305,20 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     centerX: number,
     centerY: number,
     innerRadius: number,
-    middleRadius: number,
     outerRadius: number
   ) {
-    const hour = this.currentTime.getHours();
-    const quarter = this.currentQuarterMinute();
-    let r0 = innerRadius;
-    let r1 = middleRadius;
-    if (this.getSlotResolution() === 15) {
-      const bands = [
-        { m: 0, a: (middleRadius + outerRadius) / 2, b: outerRadius },
-        { m: 15, a: middleRadius, b: (middleRadius + outerRadius) / 2 },
-        { m: 30, a: (innerRadius + middleRadius) / 2, b: middleRadius },
-        { m: 45, a: innerRadius, b: (innerRadius + middleRadius) / 2 },
-      ];
-      const band = bands.find(b => b.m === quarter) || bands[0];
-      r0 = band.a;
-      r1 = band.b;
-    } else {
-      const isOuter = this.currentTime.getMinutes() < 30;
-      r0 = isOuter ? middleRadius : innerRadius;
-      r1 = isOuter ? outerRadius : middleRadius;
-    }
     // Half of stroke-width so the frame sits fully inside the slot
     const strokeWidth = 3;
     const inset = strokeWidth / 2;
-    const highlightPath = this.createSectorPath(hour, 24, r0, r1, centerX, centerY, inset);
+    const highlightPath = this.createSectorPath(
+      this.getCurrentSector(),
+      this.getSectorCount(),
+      innerRadius,
+      outerRadius,
+      centerX,
+      centerY,
+      inset
+    );
 
     return svg`
       <path
@@ -1190,39 +1344,33 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     return (index + 0.5) * (360 / totalSectors) - 90;
   }
 
-  private getUprightTextRotationDeg(angleDeg: number): number {
-    // Keep text readable in the bottom half of the circle by flipping 180°
-    if (angleDeg > 90 || angleDeg < -90) {
-      return angleDeg + 180;
-    }
-    return angleDeg;
-  }
-
   private getTimeLabel(hour: number, minute: number): string {
     return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
   }
 
   /**
-   * Render a label inside a sector.
+   * Render a label that runs outward along the radius, like a dial.
    *
-   * Args:
-   *   followSector: rotate the text with the wedge. Pass false to keep the
-   *     text horizontal, which reads better for short labels.
+   * Wedges are narrow in the single ring, so radial text fits where
+   * tangential text would overflow into the neighbours.
    */
-  private renderSectorLabel(
-    hour: number,
+  private renderRadialLabel(
+    index: number,
+    totalSectors: number,
     radius: number,
     centerX: number,
     centerY: number,
     text: string,
     fontSize: number,
     fill: string,
-    followSector: boolean = true,
   ) {
-    const pos = this.getTextPosition(hour, 24, radius, centerX, centerY);
-    const rotationDeg = followSector
-      ? this.getUprightTextRotationDeg(this.getSectorCenterAngleDeg(hour, 24))
-      : 0;
+    const pos = this.getTextPosition(index, totalSectors, radius, centerX, centerY);
+    // +90 turns the tangential angle into a radial one, then flip the left
+    // half of the dial so no label ends up upside down
+    let rotationDeg = ((this.getSectorCenterAngleDeg(index, totalSectors) + 90) % 360 + 360) % 360;
+    if (rotationDeg > 180) rotationDeg -= 360;
+    if (rotationDeg > 90) rotationDeg -= 180;
+    if (rotationDeg < -90) rotationDeg += 180;
     return svg`
       <text
         x="${pos.x}"
@@ -1240,253 +1388,84 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     `;
   }
 
-  private renderThirtyMinuteSectors(
+  /**
+   * Draw the dial as one ring of consecutive slots.
+   *
+   * 30-minute mode gives 48 wedges (00:00, 00:30, 01:00 ...), 15-minute mode
+   * gives 96. Hour boundaries get a heavier divider so the hours stay
+   * readable.
+   */
+  private renderRingSectors(
     timeSlots: TimeSlot[],
     centerX: number,
     centerY: number,
     innerRadius: number,
-    middleRadius: number,
     outerRadius: number,
   ) {
-    const bands: { pair: number; minutes: number[]; a: number; b: number }[] = [
-      { pair: 0, minutes: [0, 15], a: middleRadius, b: outerRadius },
-      { pair: 30, minutes: [30, 45], a: innerRadius, b: middleRadius },
-    ];
-
-    return svg`
-      ${Array.from({ length: 24 }, (_, hour) => bands.map(band => {
-        const isActive = band.minutes.every(
-          m => timeSlots.find(s => s.hour === hour && s.minute === m)?.isActive
-        );
-        const sectorPath = this.createSectorPath(hour, 24, band.a, band.b, centerX, centerY);
-        const clickHandler = (e: Event) => {
-          this.handleSlotClick(e, hour, band.pair);
-        };
-        return svg`
-          <path
-            d="${sectorPath}"
-            fill="${isActive ? '#10b981' : (band.pair === 0 ? '#ffffff' : '#f8f9fa')}"
-            stroke="#e5e7eb"
-            stroke-width="1"
-            style="cursor: pointer; transition: all 0.2s;"
-            @click="${clickHandler}">
-            <title>${this.getTimeLabel(hour, band.pair)}</title>
-          </path>
-        `;
-      }))}
-      ${Array.from({ length: 24 }, (_, hour) => {
-        const hourOn = [0, 15].every(m => timeSlots.find(s => s.hour === hour && s.minute === m)?.isActive);
-        return this.renderSectorLabel(
-          hour,
-          (middleRadius + outerRadius) / 2,
-          centerX,
-          centerY,
-          this.getTimeLabel(hour, 0),
-          11,
-          hourOn ? '#ffffff' : '#374151',
-        );
-      })}
-      ${Array.from({ length: 24 }, (_, hour) => {
-        const halfOn = [30, 45].every(m => timeSlots.find(s => s.hour === hour && s.minute === m)?.isActive);
-        return this.renderSectorLabel(
-          hour,
-          (innerRadius + middleRadius) / 2,
-          centerX,
-          centerY,
-          this.getTimeLabel(hour, 30),
-          9,
-          halfOn ? '#ffffff' : '#6b7280',
-        );
-      })}
-    `;
-  }
-
-  private renderFifteenMinuteSectors(
-    timeSlots: TimeSlot[],
-    centerX: number,
-    centerY: number,
-    innerRadius: number,
-    middleRadius: number,
-    outerRadius: number,
-  ) {
-    const bands: { m: number; a: number; b: number }[] = [
-      { m: 0, a: (middleRadius + outerRadius) / 2, b: outerRadius },
-      { m: 15, a: middleRadius, b: (middleRadius + outerRadius) / 2 },
-      { m: 30, a: (innerRadius + middleRadius) / 2, b: middleRadius },
-      { m: 45, a: innerRadius, b: (innerRadius + middleRadius) / 2 },
-    ];
-    const outerBand = bands[0];
-    const outerLabelRadius = (outerBand.a + outerBand.b) / 2;
+    const count = this.getSectorCount();
+    const perHour = count / 24;
+    const states = this.getSlotStateMap(timeSlots);
+    const labelRadius = (innerRadius + outerRadius) / 2;
     const selectColor = '#3b82f6';
-    const quarterColor = '#4338ca';
-    const hourColor = '#0f172a';
-    const alwaysLabels = this.getQuarterLabelsMode() === 'always';
 
     return svg`
-      ${Array.from({ length: 24 }, (_, hour) => bands.map(band => {
-        const isActive = timeSlots.find(s => s.hour === hour && s.minute === band.m)?.isActive || false;
+      ${Array.from({ length: count }, (_, index) => {
+        const { hour, minutes } = this.getSectorSlot(index);
+        const isActive = this.isSectorActive(index, states);
         const selected = this.selectedHour === hour;
-        const showLabel = alwaysLabels || selected;
-        const sectorPath = this.createSectorPath(hour, 24, band.a, band.b, centerX, centerY);
+        const sectorPath = this.createSectorPath(
+          index,
+          count,
+          innerRadius,
+          outerRadius,
+          centerX,
+          centerY
+        );
         return svg`
           <path
             d="${sectorPath}"
-            fill="${isActive ? '#10b981' : '#ffffff'}"
+            fill="${isActive ? '#10b981' : (hour % 2 === 0 ? '#ffffff' : '#f3f4f6')}"
             stroke="${selected ? selectColor : '#e5e7eb'}"
-            stroke-width="${selected ? '2' : '1'}"
-            style="cursor: pointer; transition: all 0.2s;"
-            @pointerdown="${(e: Event) => this.handleQuarterPointerDown(e, hour, band.m)}"
-            @pointerup="${(e: Event) => this.handleQuarterPointerUp(e)}"
-            @pointercancel="${() => this.handleQuarterPointerCancel()}"
-            @contextmenu="${(e: Event) => e.preventDefault()}">
-            <title>${this.getTimeLabel(hour, band.m)}</title>
+            stroke-width="${selected ? '1.5' : '0.75'}"
+            style="cursor: pointer; transition: fill 0.15s;">
+            <title>${this.getTimeLabel(hour, minutes[0])}</title>
           </path>
-          ${showLabel && band.m !== 0
-            ? this.renderSectorLabel(
-                hour,
-                (band.a + band.b) / 2,
-                centerX,
-                centerY,
-                String(band.m),
-                9.5,
-                isActive ? '#ffffff' : quarterColor,
-                false,
-              )
-            : ''}
         `;
-      }))}
+      })}
+
       ${Array.from({ length: 24 }, (_, hour) => {
-        // Colour by the slot the label sits on, so it stays readable either way
-        const outerOn =
-          timeSlots.find(s => s.hour === hour && s.minute === 0)?.isActive || false;
-        return this.renderSectorLabel(
+        const angle = ((hour * 360) / 24 - 90) * (Math.PI / 180);
+        return svg`
+          <line
+            x1="${centerX + innerRadius * Math.cos(angle)}"
+            y1="${centerY + innerRadius * Math.sin(angle)}"
+            x2="${centerX + outerRadius * Math.cos(angle)}"
+            y2="${centerY + outerRadius * Math.sin(angle)}"
+            stroke="#9ca3af"
+            stroke-width="1.5"
+            pointer-events="none">
+          </line>
+        `;
+      })}
+
+      ${Array.from({ length: 24 }, (_, hour) => {
+        const firstSector = hour * perHour;
+        const hourOn = Array.from({ length: perHour }, (_, offset) =>
+          this.isSectorActive(firstSector + offset, states)
+        ).every(Boolean);
+        return this.renderRadialLabel(
           hour,
-          outerLabelRadius,
+          24,
+          labelRadius,
           centerX,
           centerY,
           hour.toString().padStart(2, '0'),
           13,
-          outerOn ? '#ffffff' : hourColor,
-          false,
+          hourOn ? '#ffffff' : '#0f172a',
         );
       })}
+
     `;
-  }
-
-  private renderDividingLines() {
-    const lines = [];
-    const centerX = 200;
-    const centerY = 200;
-    const outerRadius = 180;
-    const innerRadius = 50;
-    
-    for (let i = 0; i < 24; i++) {
-      const angle = (i * 360 / 24 - 90) * (Math.PI / 180);
-      const xInner = centerX + innerRadius * Math.cos(angle);
-      const yInner = centerY + innerRadius * Math.sin(angle);
-      const xOuter = centerX + outerRadius * Math.cos(angle);
-      const yOuter = centerY + outerRadius * Math.sin(angle);
-      
-      lines.push(html`
-        <line 
-          x1="${xInner}" 
-          y1="${yInner}" 
-          x2="${xOuter}" 
-          y2="${yOuter}" 
-          stroke="#e5e7eb" 
-          stroke-width="1">
-        </line>
-      `);
-    }
-    
-    return lines;
-  }
-
-  private renderOuterSectors() {
-    const sectors = [];
-    const centerX = 200;
-    const centerY = 200;
-    const outerRadius = 180;
-    const innerRadius = 50;
-    const timeSlots = this.getTimeSlots();
-    
-    for (let hour = 0; hour < 24; hour++) {
-      const sectorPath = this.createSectorPath(hour, 24, innerRadius, outerRadius, centerX, centerY);
-      const textPos = this.getTextPosition(hour, 24, (innerRadius + outerRadius) / 2, centerX, centerY);
-      const angleDeg = this.getSectorCenterAngleDeg(hour, 24);
-      const rotationDeg = this.getUprightTextRotationDeg(angleDeg);
-      const labelY = textPos.y + 3;
-      const slot = timeSlots.find(s => s.hour === hour && s.minute === 0);
-      const isActive = slot?.isActive || false;
-      const isCurrent = this.currentTime.getHours() === hour && this.currentTime.getMinutes() < 30;
-      
-      sectors.push(html`
-        <path 
-          d="${sectorPath}" 
-          fill="${isActive ? '#10b981' : '#ffffff'}"
-          stroke="${isCurrent ? '#ff6b6b' : '#e5e7eb'}"
-          stroke-width="${isCurrent ? '3' : '1'}"
-          style="cursor: pointer; transition: all 0.2s;"
-          @click="${() => this.toggleTimeSlot(hour, 0)}">
-        </path>
-        <text 
-          x="${textPos.x}" 
-          y="${labelY}" 
-          text-anchor="middle" 
-          font-size="11" 
-          font-weight="bold"
-          transform="rotate(${rotationDeg} ${textPos.x} ${labelY})"
-          style="pointer-events: none; user-select: none; font-weight: bold;"
-          fill="${isActive ? '#ffffff' : '#374151'}">
-          ${this.getTimeLabel(hour, 0)}
-        </text>
-      `);
-    }
-    
-    return sectors;
-  }
-
-  private renderInnerSectors() {
-    const sectors = [];
-    const centerX = 200;
-    const centerY = 200;
-    const innerRadius = 50;
-    const timeSlots = this.getTimeSlots();
-    
-    for (let hour = 0; hour < 24; hour++) {
-      const sectorPath = this.createSectorPath(hour, 24, 0, innerRadius, centerX, centerY);
-      const textPos = this.getTextPosition(hour, 24, innerRadius / 2, centerX, centerY);
-      const angleDeg = this.getSectorCenterAngleDeg(hour, 24);
-      const rotationDeg = this.getUprightTextRotationDeg(angleDeg);
-      const labelY = textPos.y + 2;
-      const slot = timeSlots.find(s => s.hour === hour && s.minute === 30);
-      const isActive = slot?.isActive || false;
-      const isCurrent = this.currentTime.getHours() === hour && this.currentTime.getMinutes() >= 30;
-      
-      sectors.push(html`
-        <path 
-          d="${sectorPath}" 
-          fill="${isActive ? '#10b981' : '#f8f9fa'}"
-          stroke="${isCurrent ? '#ff6b6b' : '#e5e7eb'}"
-          stroke-width="${isCurrent ? '3' : '1'}"
-          style="cursor: pointer; transition: all 0.2s;"
-          @click="${() => this.toggleTimeSlot(hour, 30)}">
-        </path>
-        <text 
-          x="${textPos.x}" 
-          y="${labelY}" 
-          text-anchor="middle" 
-          font-size="9" 
-          font-weight="bold"
-          transform="rotate(${rotationDeg} ${textPos.x} ${labelY})"
-          style="pointer-events: none; user-select: none; font-weight: bold;"
-          fill="${isActive ? '#ffffff' : '#6b7280'}">
-          ${this.getTimeLabel(hour, 30)}
-        </text>
-      `);
-    }
-    
-    return sectors;
   }
 
   protected render(): TemplateResult {
@@ -1509,11 +1488,10 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
     const entityName = this.getEntityName();
     const timeSlots = demo ? this.getDemoTimeSlots() : this.getTimeSlots();
 
-    const centerX = 200;
-    const centerY = 200;
-    const outerRadius = 180;
-    const innerRadius = 50;
-    const middleRadius = (innerRadius + outerRadius) / 2; // 115
+    const centerX = ShabbatClockCard.CENTER;
+    const centerY = ShabbatClockCard.CENTER;
+    const outerRadius = ShabbatClockCard.RING_OUTER;
+    const innerRadius = ShabbatClockCard.RING_INNER;
 
     return html`
       <ha-card>
@@ -1553,7 +1531,15 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
         `}
         
         <div class="timer-container">
-          <svg class="timer-svg" viewBox="0 0 400 400">
+          <svg
+            class="timer-svg"
+            viewBox="0 0 400 400"
+            @pointerdown="${(e: PointerEvent) => this.handleRingPointerDown(e)}"
+            @pointermove="${(e: PointerEvent) => this.handleRingPointerMove(e)}"
+            @pointerup="${(e: PointerEvent) => this.handleRingPointerUp(e)}"
+            @pointercancel="${() => this.handleRingPointerCancel()}"
+            @contextmenu="${(e: Event) => e.preventDefault()}"
+          >
             <!-- Circles -->
             <circle 
               cx="${centerX}" 
@@ -1566,39 +1552,12 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
             <circle 
               cx="${centerX}" 
               cy="${centerY}" 
-              r="${middleRadius}" 
-              fill="none" 
-              stroke="#d1d5db" 
-              stroke-width="1.5">
-            </circle>
-            <circle 
-              cx="${centerX}" 
-              cy="${centerY}" 
               r="${innerRadius}" 
               fill="none" 
               stroke="#e5e7eb" 
               stroke-width="2">
             </circle>
-            
-            <!-- Dividing lines -->
-            ${Array.from({ length: 24 }, (_, i) => {
-              const angle = (i * 360 / 24 - 90) * (Math.PI / 180);
-              const xInner = centerX + innerRadius * Math.cos(angle);
-              const yInner = centerY + innerRadius * Math.sin(angle);
-              const xOuter = centerX + outerRadius * Math.cos(angle);
-              const yOuter = centerY + outerRadius * Math.sin(angle);
-              return svg`
-                <line 
-                  x1="${xInner}" 
-                  y1="${yInner}" 
-                  x2="${xOuter}" 
-                  y2="${yOuter}" 
-                  stroke="#e5e7eb" 
-                  stroke-width="1">
-                </line>
-              `;
-            })}
-            
+
             <!-- Center indicator for controlled entities -->
             ${(() => {
               if (demo) {
@@ -1690,12 +1649,10 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
               `;
             })()}
             
-            ${this.getSlotResolution() === 15
-              ? this.renderFifteenMinuteSectors(timeSlots, centerX, centerY, innerRadius, middleRadius, outerRadius)
-              : this.renderThirtyMinuteSectors(timeSlots, centerX, centerY, innerRadius, middleRadius, outerRadius)}
+            ${this.renderRingSectors(timeSlots, centerX, centerY, innerRadius, outerRadius)}
 
             <!-- Current time highlight (drawn last so all sides stay uniform) -->
-            ${this.renderCurrentTimeHighlight(centerX, centerY, innerRadius, middleRadius, outerRadius)}
+            ${this.renderCurrentTimeHighlight(centerX, centerY, innerRadius, outerRadius)}
           </svg>
         </div>
         ${this.renderClimateControls()}
@@ -1795,8 +1752,8 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
         object-fit: contain;
         direction: ltr;
         unicode-bidi: isolate;
-        /* Keep long press from selecting text or opening the touch callout */
-        touch-action: manipulation;
+        /* Swipe across slots must paint, not scroll the dashboard */
+        touch-action: none;
         user-select: none;
         -webkit-user-select: none;
         -webkit-touch-callout: none;
@@ -2238,16 +2195,16 @@ export class Timer24HCard extends LitElement implements LovelaceCard {
 }
 
 console.info(
-  '%c  TIMER-24H-CARD  %c  Version 1.4.0  ',
+  '%c  SHABBAT-CLOCK-CARD  %c  Version 2.0.0  ',
   'color: orange; font-weight: bold; background: black',
   'color: white; font-weight: bold; background: dimgray',
 );
 
 (window as any).customCards = (window as any).customCards || [];
 (window as any).customCards.push({
-  type: 'timer-24h-card',
-  name: 'Timer 24H Card',
-  description: '24 Hour Timer Card with automatic entity control',
+  type: 'shabbat-clock-card',
+  name: 'Shabbat Clock Card',
+  description: 'Shabbat Clock card with automatic entity control',
   preview: true,
   documentationURL: 'https://github.com/davidss20/home-assistant-24h-timer-integration'
 });

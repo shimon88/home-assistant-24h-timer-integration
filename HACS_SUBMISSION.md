@@ -8,12 +8,12 @@ https://github.com/hacs/default/issues/new?template=integration.yml
 ## 📌 Issue Title (כותרת ה-Issue):
 
 ```
-Add Timer 24H Integration
+Add Shabbat Clock Integration
 ```
 
 או באנגלית מפורטת יותר:
 ```
-Add Timer 24H Integration - 24-hour visual timer with automatic entity control
+Add Shabbat Clock Integration - 24-hour visual timer with automatic entity control
 ```
 
 ---

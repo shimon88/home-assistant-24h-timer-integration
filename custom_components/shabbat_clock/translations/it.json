@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Aggiungi Timer 24H",
+        "title": "Aggiungi Shabbat Clock",
         "description": "Configura il tuo timer di 24 ore con controllo automatico delle entità",
         "data": {
           "name": "Nome Timer",
@@ -30,7 +30,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Configura Timer 24H",
+        "title": "Configura Shabbat Clock",
         "description": "Aggiorna impostazioni e comportamento del timer",
         "data": {
           "name": "Nome Timer",

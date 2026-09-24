@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 520" width="860" height="520" role="img" aria-label="Timer 24H 15 and 30 minute preview">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 520" width="860" height="520" role="img" aria-label="Shabbat Clock 15 and 30 minute preview">
   <rect width="860" height="520" fill="#f4f6f8"/>
   
   <g transform="translate(8,16)">
     <rect x="0" y="0" width="420" height="488" rx="16" fill="#ffffff" stroke="#e5e7eb"/>
-    <text x="16" y="28" font-size="16" font-weight="700" fill="#212121">Timer 24H</text>
+    <text x="16" y="28" font-size="16" font-weight="700" fill="#212121">Shabbat Clock</text>
     <rect x="318" y="12" width="86" height="22" rx="6" fill="#d1fae5"/>
     <text x="361" y="28" text-anchor="middle" font-size="12" font-weight="600" fill="#059669">Active</text>
     <text x="210" y="48" text-anchor="middle" font-size="12" fill="#6b7280">30-minute view</text>
@@ -141,7 +141,7 @@
   
   <g transform="translate(432,16)">
     <rect x="0" y="0" width="420" height="488" rx="16" fill="#ffffff" stroke="#e5e7eb"/>
-    <text x="16" y="28" font-size="16" font-weight="700" fill="#212121">Timer 24H</text>
+    <text x="16" y="28" font-size="16" font-weight="700" fill="#212121">Shabbat Clock</text>
     <rect x="318" y="12" width="86" height="22" rx="6" fill="#d1fae5"/>
     <text x="361" y="28" text-anchor="middle" font-size="12" font-weight="600" fill="#059669">Active</text>
     <text x="210" y="48" text-anchor="middle" font-size="12" fill="#6b7280">15-minute view — quarter labels always on</text>

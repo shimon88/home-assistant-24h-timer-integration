@@ -6,9 +6,9 @@ import { terser } from 'rollup-plugin-terser';
 const dev = process.env.ROLLUP_WATCH;
 
 export default [{
-  input: 'timer-24h-card.ts',
+  input: 'shabbat-clock-card.ts',
   output: {
-    file: 'timer-24h-card.js',
+    file: 'shabbat-clock-card.js',
     format: 'es',
     sourcemap: dev ? true : false,
     inlineDynamicImports: true,
@@ -33,9 +33,9 @@ export default [{
   ].filter(Boolean),
   external: [],
 }, {
-  input: 'timer-24h-card-editor.ts',
+  input: 'shabbat-clock-card-editor.ts',
   output: {
-    file: 'timer-24h-card-editor.js',
+    file: 'shabbat-clock-card-editor.js',
     format: 'es',
     sourcemap: dev ? true : false,
     inlineDynamicImports: true,

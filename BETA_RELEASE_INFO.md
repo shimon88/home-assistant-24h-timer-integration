@@ -51,7 +51,7 @@ This beta introduces improvements and prepares for the upcoming v1.1.0 release.
 
 ### Via HACS (Recommended):
 1. Go to **HACS** → **Integrations**
-2. Find **Timer 24H Integration**
+2. Find **Shabbat Clock Integration**
 3. Click **⋮** (three dots) → **Redownload**
 4. Select version: **`v1.1.0-beta.1`** from dropdown
 5. Click **Install**
@@ -69,7 +69,7 @@ If not already added to HACS, add as custom repository:
 # Download beta
 wget https://github.com/davidss20/home-assistant-24h-timer-integration/archive/refs/tags/v1.1.0-beta.1.zip
 
-# Extract to custom_components/timer_24h
+# Extract to custom_components/shabbat_clock
 # Restart Home Assistant
 ```
 
@@ -94,7 +94,7 @@ wget https://github.com/davidss20/home-assistant-24h-timer-integration/archive/r
 
 If you encounter issues, you can easily rollback to stable:
 
-1. **HACS** → **Integrations** → **Timer 24H**
+1. **HACS** → **Integrations** → **Shabbat Clock**
 2. Click **⋮** → **Redownload**
 3. Select version: **`v1.0.0`** (Latest - Stable)
 4. Click **Install**
@@ -123,7 +123,7 @@ We need your help to test:
 
 ## 🙏 Thank You
 
-Thank you for helping test this beta! Your feedback makes Timer 24H better for everyone.
+Thank you for helping test this beta! Your feedback makes Shabbat Clock better for everyone.
 
 ---
 

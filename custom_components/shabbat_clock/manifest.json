@@ -1,6 +1,6 @@
 {
-  "domain": "timer_24h",
-  "name": "Timer 24H",
+  "domain": "shabbat_clock",
+  "name": "Shabbat Clock",
   "after_dependencies": ["http", "lovelace"],
   "codeowners": ["@shimon88"],
   "config_flow": true,
@@ -9,5 +9,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/shimon88/home-assistant-24h-timer-integration/issues",
   "requirements": [],
-  "version": "1.4.4"
+  "version": "2.0.0"
 }

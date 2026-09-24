@@ -1,4 +1,4 @@
-"""The Timer 24H integration."""
+"""The Shabbat Clock integration."""
 from __future__ import annotations
 
 import json
@@ -38,7 +38,7 @@ from .const import (
     SERVICE_TOGGLE_HOUR,
     SERVICE_TOGGLE_SLOT,
 )
-from .coordinator import Timer24HCoordinator
+from .coordinator import ShabbatClockCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,18 +67,18 @@ async def init_lovelace_resource(hass: HomeAssistant, url: str, version: str) ->
             
             # Already has correct version
             if item["url"].endswith(version):
-                _LOGGER.info("✅ Timer 24H resource already at version %s", version)
+                _LOGGER.info("✅ Shabbat Clock resource already at version %s", version)
                 return False
             
             # Update to new version
-            _LOGGER.info("🔄 Updating Timer 24H resource from %s to %s", item["url"], url_with_version)
+            _LOGGER.info("🔄 Updating Shabbat Clock resource from %s to %s", item["url"], url_with_version)
             await resources.async_update_item(
                 item["id"], {"res_type": "module", "url": url_with_version}
             )
             return True
         
         # Create new resource
-        _LOGGER.info("✅ Creating new Timer 24H resource: %s", url_with_version)
+        _LOGGER.info("✅ Creating new Shabbat Clock resource: %s", url_with_version)
         await resources.async_create_item({"res_type": "module", "url": url_with_version})
         return True
         
@@ -87,8 +87,23 @@ async def init_lovelace_resource(hass: HomeAssistant, url: str, version: str) ->
         return False
 
 
+async def _async_remove_legacy_card_resources(hass: HomeAssistant) -> None:
+    """Drop Lovelace resources from the previous Timer 24H card path."""
+    try:
+        resources: ResourceStorageCollection = hass.data["lovelace"].resources
+        await resources.async_get_info()
+        for item in list(resources.async_items()):
+            url = item.get("url", "")
+            if "/local/timer-24h-card/" not in url:
+                continue
+            await resources.async_delete_item(item["id"])
+            _LOGGER.info("Removed legacy Timer 24H Lovelace resource: %s", url)
+    except Exception as err:
+        _LOGGER.debug("Could not remove legacy Lovelace resource: %s", err)
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the Timer 24H component."""
+    """Set up the Shabbat Clock component."""
     hass.data.setdefault(DOMAIN, {})
     
     # Install card files automatically
@@ -97,8 +112,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     # Register static path for the card
     await hass.http.async_register_static_paths([
         StaticPathConfig(
-            "/local/timer-24h-card/timer-24h-card.js",
-            hass.config.path("www/timer-24h-card/timer-24h-card.js"),
+            "/local/shabbat-clock-card/shabbat-clock-card.js",
+            hass.config.path("www/shabbat-clock-card/shabbat-clock-card.js"),
             True
         )
     ])
@@ -115,15 +130,16 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         _LOGGER.warning("Could not read version from manifest: %s", err)
     
     # Register lovelace resource
-    _LOGGER.info("🔵 Timer 24H: Registering lovelace resource (version %s)", version)
-    await init_lovelace_resource(hass, "/local/timer-24h-card/timer-24h-card.js", version)
-    
+    _LOGGER.info("🔵 Shabbat Clock: Registering lovelace resource (version %s)", version)
+    await init_lovelace_resource(hass, "/local/shabbat-clock-card/shabbat-clock-card.js", version)
+    await _async_remove_legacy_card_resources(hass)
+
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Timer 24H from a config entry."""
-    coordinator = Timer24HCoordinator(hass, entry)
+    """Set up Shabbat Clock from a config entry."""
+    coordinator = ShabbatClockCoordinator(hass, entry)
     await coordinator.async_persist_migration_if_needed()
     await coordinator.async_config_entry_first_refresh()
 
@@ -169,7 +185,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_register_services(hass: HomeAssistant) -> None:
-    """Register services for Timer 24H."""
+    """Register services for Shabbat Clock."""
 
     async def handle_toggle_slot(call: ServiceCall) -> None:
         """Handle the toggle_slot service call."""
@@ -499,37 +515,41 @@ async def _async_install_card(hass: HomeAssistant) -> None:
             _LOGGER.warning("Could not read version from manifest: %s", err)
         
         # Source files
-        card_js_source = integration_path / "dist" / "timer-24h-card.js"
-        editor_js_source = integration_path / "dist" / "timer-24h-card-editor.js"
+        card_js_source = integration_path / "dist" / "shabbat-clock-card.js"
+        editor_js_source = integration_path / "dist" / "shabbat-clock-card-editor.js"
         
         # Destination directory
         www_dir = Path(hass.config.path("www"))
-        card_dir = www_dir / "timer-24h-card"
-        
+        card_dir = www_dir / "shabbat-clock-card"
+        old_card_dir = www_dir / "timer-24h-card"
+
         # Create directory if it doesn't exist
         card_dir.mkdir(parents=True, exist_ok=True)
+        if old_card_dir.exists():
+            shutil.rmtree(old_card_dir)
+            _LOGGER.info("Removed legacy www/timer-24h-card files")
         
         # Copy files if they exist
         if card_js_source.exists():
-            shutil.copy2(card_js_source, card_dir / "timer-24h-card.js")
-            _LOGGER.info("Timer 24H Card installed to www/timer-24h-card/")
+            shutil.copy2(card_js_source, card_dir / "shabbat-clock-card.js")
+            _LOGGER.info("Shabbat Clock Card installed to www/shabbat-clock-card/")
         else:
             _LOGGER.warning(
-                "Timer 24H Card source file not found at %s. "
+                "Shabbat Clock Card source file not found at %s. "
                 "You may need to build the card first.",
                 card_js_source,
             )
             
         if editor_js_source.exists():
-            shutil.copy2(editor_js_source, card_dir / "timer-24h-card-editor.js")
+            shutil.copy2(editor_js_source, card_dir / "shabbat-clock-card-editor.js")
         
         _LOGGER.info(
-            "✅ Timer 24H Card v%s files installed successfully to www/timer-24h-card/",
+            "✅ Shabbat Clock Card v%s files installed successfully to www/shabbat-clock-card/",
             version
         )
         
     except Exception as err:
-        _LOGGER.error("Failed to install Timer 24H Card: %s", err)
+        _LOGGER.error("Failed to install Shabbat Clock Card: %s", err)
 
 
 

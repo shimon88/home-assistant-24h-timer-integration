@@ -1,6 +1,6 @@
 import { LitElement, html, css } from 'https://unpkg.com/lit@3/index.js?module';
 
-class Timer24HCard extends LitElement {
+class ShabbatClockCard extends LitElement {
   static get properties() {
     return {
       hass: { type: Object },
@@ -28,10 +28,10 @@ class Timer24HCard extends LitElement {
     // Generate unique storage entity ID
     const timestamp = Date.now();
     const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    const uniqueId = `timer_24h_card_${timestamp}_${random}`;
+    const uniqueId = `shabbat_clock_card_${timestamp}_${random}`;
     
     return {
-      title: 'Timer 24H',
+      title: 'Shabbat Clock',
       home_logic: 'OR',
       entities: [],
       home_sensors: [],
@@ -156,7 +156,7 @@ class Timer24HCard extends LitElement {
       }
 
       // Only delete if it's our timer card entity
-      if (!entityId.includes('timer_24h_card_')) {
+      if (!entityId.includes('shabbat_clock_card_')) {
         return; // Not our entity
       }
 
@@ -305,7 +305,7 @@ class Timer24HCard extends LitElement {
       
       // Fallback to localStorage if server storage fails
       if (!savedData && this.config?.allow_local_fallback !== false) {
-        const localKey = `timer-24h-${this.config?.storage_entity_id || 'default'}`;
+        const localKey = `shabbat-clock-${this.config?.storage_entity_id || 'default'}`;
         const localData = localStorage.getItem(localKey);
         if (localData) {
           savedData = JSON.parse(localData);
@@ -345,7 +345,7 @@ class Timer24HCard extends LitElement {
           try {
             await this.hass.callService('persistent_notification', 'create', {
               notification_id: this.config.storage_entity_id,
-              title: 'Timer 24H Card Data',
+              title: 'Shabbat Clock Card Data',
               message: JSON.stringify(data)
             });
             console.log('✅ Timer Card: Saved to Persistent Notifications');
@@ -362,7 +362,7 @@ class Timer24HCard extends LitElement {
     // Final fallback: localStorage
     if (this.config?.allow_local_fallback !== false) {
       try {
-        const localKey = `timer-24h-${this.config?.storage_entity_id || 'default'}`;
+        const localKey = `shabbat-clock-${this.config?.storage_entity_id || 'default'}`;
         localStorage.setItem(localKey, JSON.stringify(data));
         console.log('💾 Timer Card: Saved to localStorage as fallback');
       } catch (localError) {
@@ -734,7 +734,7 @@ class Timer24HCard extends LitElement {
   // Static helper methods for editor integration
   static async ensureStorageEntity(hass, desiredId) {
     // This method is kept for compatibility but not used since we removed the editor
-    return desiredId || `input_text.timer_24h_card_${Date.now()}`;
+    return desiredId || `input_text.shabbat_clock_card_${Date.now()}`;
   }
 
   static async readStorage(hass, entityId) {
@@ -773,8 +773,8 @@ class Timer24HCard extends LitElement {
 
   // Define layout as a property for Home Assistant
   static defineLayoutProperty() {
-    if (!Timer24HCard.prototype.hasOwnProperty('layout')) {
-      Object.defineProperty(Timer24HCard.prototype, 'layout', {
+    if (!ShabbatClockCard.prototype.hasOwnProperty('layout')) {
+      Object.defineProperty(ShabbatClockCard.prototype, 'layout', {
         get: function() {
           return this._layout || {
             grid_rows: 3,
@@ -838,7 +838,7 @@ class Timer24HCard extends LitElement {
     if (!this.hass) return false;
 
     try {
-      const automationId = `timer_24h_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
+      const automationId = `shabbat_clock_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
       console.log(`🔍 Timer Card: Looking for automation: ${automationId}`);
       
       // Try different methods to check for automation
@@ -865,15 +865,15 @@ class Timer24HCard extends LitElement {
   async createAutomation() {
     if (!this.hass) return;
 
-    const automationId = `timer_24h_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
-    const scriptId = `timer_24h_control_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
+    const automationId = `shabbat_clock_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
+    const scriptId = `shabbat_clock_control_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
     
     console.log(`🚀 Timer Card: Creating automation: ${automationId}`);
     console.log(`🚀 Timer Card: Script to call: script.${scriptId}`);
     
     const automationConfig = {
-      alias: `Timer 24H ${this.config.title}`,
-      description: `אוטומציה עבור טיימר 24 שעות - ${this.config.title}`,
+      alias: `Shabbat Clock ${this.config.title}`,
+      description: `אוטומציה עבור שעון שבת - ${this.config.title}`,
       mode: 'single',
       trigger: [
         {
@@ -914,8 +914,8 @@ class Timer24HCard extends LitElement {
           // Try to create via persistent notification for manual creation
           const yamlConfig = this.generateAutomationYAML(automationId, automationConfig);
           await this.hass.callService('persistent_notification', 'create', {
-            notification_id: `timer_24h_automation_${automationId}`,
-            title: 'Timer 24H Card - Automation YAML',
+            notification_id: `shabbat_clock_automation_${automationId}`,
+            title: 'Shabbat Clock Card - Automation YAML',
             message: `Please add this automation to your automations.yaml:\n\n${yamlConfig}`
           });
           console.log('📝 Timer Card: Automation YAML sent via notification');
@@ -934,7 +934,7 @@ class Timer24HCard extends LitElement {
   async createControlScript() {
     if (!this.hass) return;
 
-    const scriptId = `timer_24h_control_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
+    const scriptId = `shabbat_clock_control_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
     const storageEntityId = this.config.storage_entity_id;
     
     console.log(`🚀 Timer Card: Creating script: ${scriptId}`);
@@ -981,8 +981,8 @@ class Timer24HCard extends LitElement {
     }
     
     const scriptConfig = {
-      alias: `Timer 24H Control - ${this.config.title}`,
-      description: `סקריפט בקרה עבור טיימר 24 שעות - ${this.config.title}`,
+      alias: `Shabbat Clock Control - ${this.config.title}`,
+      description: `סקריפט בקרה עבור שעון שבת - ${this.config.title}`,
       mode: 'single',
       sequence: [
         {
@@ -1046,8 +1046,8 @@ class Timer24HCard extends LitElement {
         // Fallback: Create YAML for manual addition
         const yamlConfig = this.generateScriptYAML(scriptId, scriptConfig);
         await this.hass.callService('persistent_notification', 'create', {
-          notification_id: `timer_24h_script_${scriptId}`,
-          title: 'Timer 24H Card - Script YAML',
+          notification_id: `shabbat_clock_script_${scriptId}`,
+          title: 'Shabbat Clock Card - Script YAML',
           message: `Please add this script to your scripts.yaml:\n\n${yamlConfig}`
         });
         console.log('📝 Timer Card: Script YAML sent via notification');
@@ -1060,7 +1060,7 @@ class Timer24HCard extends LitElement {
   }
 
   generateAutomationYAML(automationId, config) {
-    return `# Timer 24H Card Automation
+    return `# Shabbat Clock Card Automation
 - id: ${automationId}
   alias: "${config.alias}"
   description: "${config.description}"
@@ -1076,7 +1076,7 @@ class Timer24HCard extends LitElement {
   }
 
   generateScriptYAML(scriptId, config) {
-    const yamlLines = [`# Timer 24H Card Script`];
+    const yamlLines = [`# Shabbat Clock Card Script`];
     yamlLines.push(`${scriptId}:`);
     yamlLines.push(`  alias: "${config.alias}"`);
     yamlLines.push(`  description: "${config.description}"`);
@@ -1161,8 +1161,8 @@ class Timer24HCard extends LitElement {
     }
 
     try {
-      const automationId = `timer_24h_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
-      const scriptId = `timer_24h_control_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
+      const automationId = `shabbat_clock_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
+      const scriptId = `shabbat_clock_control_${this.config.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}`;
 
       // Schedule cleanup after a delay to avoid issues during page refresh
       setTimeout(async () => {
@@ -1193,19 +1193,19 @@ class Timer24HCard extends LitElement {
 }
 
 console.info(
-  '%c  TIMER-24H-CARD  %c  Version 2.1.0 - YAML Only  ',
+  '%c  SHABBAT-CLOCK-CARD  %c  Version 2.1.0 - YAML Only  ',
   'color: orange; font-weight: bold; background: black',
   'color: white; font-weight: bold; background: dimgray'
 );
 
 // Register the card
-customElements.define('timer-24h-card', Timer24HCard);
+customElements.define('shabbat-clock-card', ShabbatClockCard);
 
 // Add to custom cards registry
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: 'timer-24h-card',
-  name: 'Timer 24H Card',
+  type: 'shabbat-clock-card',
+  name: 'Shabbat Clock Card',
   description: '24h timer with YAML configuration only',
   preview: true,
   documentationURL: 'https://github.com/davidss20/home-assistant-timer-card',
@@ -1229,4 +1229,4 @@ window.customCards.push({
 });
 
 // Define layout property
-Timer24HCard.defineLayoutProperty();
+ShabbatClockCard.defineLayoutProperty();

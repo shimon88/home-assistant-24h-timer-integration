@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Agregar Temporizador 24H",
+        "title": "Agregar Shabbat Clock",
         "description": "Configura tu temporizador de 24 horas con control automático de entidades",
         "data": {
           "name": "Nombre del Temporizador",
@@ -30,7 +30,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Configurar Temporizador 24H",
+        "title": "Configurar Shabbat Clock",
         "description": "Actualizar configuración y comportamiento del temporizador",
         "data": {
           "name": "Nombre del Temporizador",
