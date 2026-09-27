@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-09-27
+
+### Fixed
+- 🖐️ A manual turn-on during an off slot stays on. The timer no longer forces entities off on every minute tick.
+- 🚫 An off slot no longer turns entities off when activation conditions are unmet.
+- ❄️ The timer turns an entity off only if it sent the on command for that block and the conditions are still met. An entity that was already on does not count.
+
 ## [2.0.2] - 2026-09-24
 
 ### Fixed

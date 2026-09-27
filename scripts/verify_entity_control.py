@@ -4,13 +4,13 @@ Verifies:
   1. Unmet conditions during an active slot do not turn an already-on climate off
   2. Unmet conditions during an active slot do not turn an off climate on
   3. An inactive slot does not turn entities off when the timer never turned them on
-  4. An inactive slot still turns entities off if the timer turned them on earlier
-  5. An inactive slot with conditions true still turns entities off
+  4. An inactive slot does not turn entities off when conditions are unmet
+  5. An inactive slot does not turn off an entity the timer did not turn on
   6. An active slot with conditions true still turns entities on
   7. A disabled timer still skips all entity control
-  8. Unavailable entities are skipped and do not clear ownership
-  9. Retry cap stops further commands in the same slot
-  10. External off during an active slot is treated as an override
+  8. Unavailable entities are skipped and the off is sent once they return
+  9. Retry cap stops further commands for the same edge
+  10. A manual change after the edge is left alone
   11. Coordinator data refresh does not send control commands
 
 Run: python scripts/verify_entity_control.py
@@ -178,6 +178,8 @@ def make_coordinator(
     coordinator._command_attempts = {}
     coordinator._external_overrides = set()
     coordinator._confirmed_on = set()
+    coordinator._control_intent = None
+    coordinator._enforced_home_status = None
     coordinator._control_lock = None
     coordinator._current_slot_key = None
     coordinator._last_should_be_on = None
@@ -230,19 +232,19 @@ async def run_cases() -> None:
     coord._timer_owns_entities = True
     await coord._control_entities()
     check(
-        "inactive slot + unmet conditions + timer previously activated: climate is turned off",
-        len(climate_off_calls(coord.hass)) == 1,
-        f"calls={coord.hass.services.calls}",
+        "inactive slot + unmet conditions: climate stays on even if ownership was stored",
+        climate_off_calls(coord.hass) == [] and coord._timer_owns_entities is False,
+        f"owns={coord._timer_owns_entities} calls={coord.hass.services.calls}",
     )
 
-    # --- inactive slot with conditions true (regression) -------------------
+    # --- inactive slot with conditions true does not fight a manual on -----
     coord = make_coordinator(
         home_status=True, slot_active=False, climate_state="cool"
     )
     await coord._control_entities()
     check(
-        "inactive slot + conditions true: climate is turned off",
-        len(climate_off_calls(coord.hass)) == 1,
+        "inactive slot + conditions true + timer never turned it on: climate stays on",
+        climate_off_calls(coord.hass) == [],
         f"calls={coord.hass.services.calls}",
     )
 
@@ -314,8 +316,8 @@ async def run_cases() -> None:
     )
     await coord._async_on_schedule_tick(None)  # type: ignore[arg-type]
     check(
-        "minute tick during active slot with conditions met: timer takes ownership",
-        coord._timer_owns_entities is True and climate_off_calls(coord.hass) == [],
+        "minute tick during active slot with climate already on: no command and no ownership",
+        coord._timer_owns_entities is False and coord.hass.services.calls == [],
         f"owns={coord._timer_owns_entities} calls={coord.hass.services.calls}",
     )
 
@@ -327,7 +329,7 @@ async def run_cases() -> None:
         "minute tick during active slot after condition drop: leave climate on",
         climate_off_calls(coord.hass) == []
         and coord._home_status is False
-        and coord._timer_owns_entities is True,
+        and coord._timer_owns_entities is False,
         f"home_status={coord._home_status} owns={coord._timer_owns_entities} calls={mid_calls}",
     )
 
@@ -339,8 +341,8 @@ async def run_cases() -> None:
     coord.hass.services.calls.clear()
     await coord._async_on_schedule_tick(None)  # type: ignore[arg-type]
     check(
-        "minute tick into inactive slot with conditions still false: turn climate off",
-        len(climate_off_calls(coord.hass)) == 1,
+        "minute tick into inactive slot with conditions still false: leave climate on",
+        climate_off_calls(coord.hass) == [],
         f"calls={coord.hass.services.calls}",
     )
 
@@ -395,9 +397,16 @@ async def run_cases() -> None:
 
     # --- unavailable must not look like off --------------------------------
     coord = make_coordinator(
-        home_status=False, slot_active=False, climate_state="unavailable"
+        home_status=True, slot_active=True, climate_state="off"
     )
-    coord._timer_owns_entities = True
+    await coord._control_entities()
+    coord.hass.services.calls.clear()
+    coord.get_current_slot = lambda: {  # type: ignore[method-assign]
+        "hour": 10,
+        "minute": 15,
+        "isActive": False,
+    }
+    coord.hass.states.set(CLIMATE_ID, "unavailable")
     await coord._control_entities()
     check(
         "unavailable climate at slot end: no off command and ownership kept",
@@ -448,9 +457,87 @@ async def run_cases() -> None:
     coord.hass.services.calls.clear()
     await coord._control_entities()
     check(
-        "user/automation turned climate off: no further on commands this slot",
-        climate_on_calls(coord.hass) == [] and CLIMATE_ID in coord._external_overrides,
-        f"overrides={coord._external_overrides} calls={coord.hass.services.calls}",
+        "user turned climate off after the on edge: no further on commands",
+        climate_on_calls(coord.hass) == [],
+        f"calls={coord.hass.services.calls}",
+    )
+
+    # --- manual on during an already-inactive slot -------------------------
+    coord = make_coordinator(
+        home_status=True, slot_active=False, climate_state="off"
+    )
+    await coord._control_entities()
+    coord.hass.states.set(CLIMATE_ID, "cool", {"temperature": 24})
+    coord.hass.services.calls.clear()
+    await coord._control_entities()
+    check(
+        "manual on during an off slot: timer does not turn climate off",
+        climate_off_calls(coord.hass) == [],
+        f"calls={coord.hass.services.calls}",
+    )
+    coord.get_current_slot = lambda: {  # type: ignore[method-assign]
+        "hour": 10,
+        "minute": 15,
+        "isActive": False,
+    }
+    await coord._control_entities()
+    check(
+        "next quarter still off: manual on stays on",
+        climate_off_calls(coord.hass) == [],
+        f"calls={coord.hass.services.calls}",
+    )
+
+    # --- off edge only after this timer sent the on ------------------------
+    coord = make_coordinator(
+        home_status=True, slot_active=True, climate_state="off"
+    )
+    await coord._control_entities()
+    check(
+        "active slot turns climate on and takes ownership",
+        len(climate_on_calls(coord.hass)) == 1 and coord._timer_owns_entities is True,
+        f"owns={coord._timer_owns_entities} calls={coord.hass.services.calls}",
+    )
+    coord.hass.states.set(CLIMATE_ID, "cool", {"temperature": 24})
+    coord.hass.services.calls.clear()
+    coord.get_current_slot = lambda: {  # type: ignore[method-assign]
+        "hour": 10,
+        "minute": 15,
+        "isActive": False,
+    }
+    await coord._control_entities()
+    check(
+        "off slot with conditions still met: timer turns its climate off",
+        len(climate_off_calls(coord.hass)) == 1,
+        f"calls={coord.hass.services.calls}",
+    )
+    coord.hass.states.set(CLIMATE_ID, "off", {"temperature": 24})
+    await coord._control_entities()
+    coord.hass.states.set(CLIMATE_ID, "cool", {"temperature": 24})
+    coord.hass.services.calls.clear()
+    await coord._control_entities()
+    check(
+        "manual on after the scheduled off: timer does not turn climate off again",
+        climate_off_calls(coord.hass) == [],
+        f"calls={coord.hass.services.calls}",
+    )
+
+    coord = make_coordinator(
+        home_status=True, slot_active=True, climate_state="off"
+    )
+    await coord._control_entities()
+    coord._home_status = False
+    coord.hass.states.set(CLIMATE_ID, "cool", {"temperature": 24})
+    coord.hass.services.calls.clear()
+    coord.get_current_slot = lambda: {  # type: ignore[method-assign]
+        "hour": 10,
+        "minute": 15,
+        "isActive": False,
+    }
+    await coord._control_entities()
+    check(
+        "off slot after conditions dropped: timer does not turn climate off",
+        climate_off_calls(coord.hass) == [] and coord._timer_owns_entities is False,
+        f"owns={coord._timer_owns_entities} calls={coord.hass.services.calls}",
     )
 
     # --- data refresh must not control entities ----------------------------
