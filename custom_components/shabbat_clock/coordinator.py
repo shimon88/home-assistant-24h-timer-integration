@@ -63,13 +63,15 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
         # Schedule ticks, condition changes and service calls can all request
         # control at once. Serialize them so an entity gets one command at a time.
         self._control_lock: asyncio.Lock | None = asyncio.Lock()
-        # True only after this timer turned entities on while conditions were met.
-        # An inactive slot may turn them off later even if a condition dropped.
-        # It must not turn off entities the timer never activated (for example a
-        # weekday while a Shabbat AND-condition is false).
+        # True only after this timer sent an on command for the current block.
+        # An off edge turns entities off only while conditions are still met.
         self._timer_owns_entities: bool = bool(
             config_entry.options.get(CONF_TIMER_OWNS_ENTITIES, False)
         )
+        # On/off decision still being finished (retries, climate temperature).
+        # None means leave entities alone until the next schedule or condition edge.
+        self._control_intent: bool | None = None
+        self._enforced_home_status: bool | None = None
         self._current_slot_key: str | None = config_entry.options.get(
             CONF_LAST_SLOT_KEY
         )
@@ -480,19 +482,74 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
         except (KeyError, TypeError, ValueError):
             return None
 
-    def _sync_slot_progress(self, slot_key: str | None, should_be_on: bool) -> None:
-        """Reset per-slot retry/override tracking when the desired target changes."""
+    def _remember_schedule_sample(self, slot_key: str | None, should_be_on: bool) -> None:
+        """Store the latest slot sample. Quarter changes do not reset an edge."""
         if (
             slot_key == self._current_slot_key
             and should_be_on == self._last_should_be_on
         ):
             return
-        self._command_attempts.clear()
-        self._external_overrides.clear()
-        self._confirmed_on.clear()
         self._current_slot_key = slot_key
         self._last_should_be_on = should_be_on
         self._persist_control_state()
+
+    def _begin_control_edge(self) -> None:
+        """Drop retry and override state so a new edge can send immediately."""
+        self._command_attempts.clear()
+        self._external_overrides.clear()
+        self._confirmed_on.clear()
+        self._last_command_times.clear()
+
+    def _update_control_intent(
+        self, slot_key: str | None, should_be_on: bool
+    ) -> bool | None:
+        """Return the on/off target to finish, or None to leave entities alone.
+
+        A command is decided only when the slot flips active/inactive, when
+        activation conditions become met during an active slot, or on the first
+        sample of an active slot (startup catch-up). Later ticks may only
+        finish that command. An off is sent only if this timer sent the on
+        and the conditions are still met.
+        """
+        home = self._home_status
+        previous_on = self._last_should_be_on
+        previous_home = self._enforced_home_status
+        slot_changed = previous_on is not None and should_be_on != previous_on
+        first_sample = previous_on is None
+        home_became_met = previous_home is False and home
+
+        self._remember_schedule_sample(slot_key, should_be_on)
+        self._enforced_home_status = home
+
+        if not home:
+            self._control_intent = None
+            if not should_be_on:
+                self._set_timer_owns_entities(False)
+            _LOGGER.debug(
+                "Activation conditions not met, skipping entity control "
+                "(slot_active=%s, timer_owns=%s)",
+                should_be_on,
+                self._timer_owns_entities,
+            )
+            return None
+
+        if first_sample:
+            # Persisted ownership from another day is not a command we sent now.
+            self._set_timer_owns_entities(False)
+            if not should_be_on:
+                self._control_intent = None
+
+        new_edge = slot_changed or home_became_met or (first_sample and should_be_on)
+        if new_edge:
+            self._begin_control_edge()
+            if should_be_on:
+                self._control_intent = True
+            elif self._timer_owns_entities:
+                self._control_intent = False
+            else:
+                self._control_intent = None
+
+        return self._control_intent
 
     async def _control_entities(self) -> None:
         """Control entities, serialized so overlapping triggers cannot double-send."""
@@ -515,18 +572,8 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
 
         current_slot = self.get_current_slot()
         should_be_on = current_slot.get("isActive", False) if current_slot else False
-        self._sync_slot_progress(self._slot_key(current_slot), should_be_on)
-
-        # Unmet conditions block the schedule: do not turn entities on, and do
-        # not turn them off unless this timer turned them on in an earlier
-        # active slot (so they still switch off when that slot ends).
-        if not self._home_status and (should_be_on or not self._timer_owns_entities):
-            _LOGGER.debug(
-                "Activation conditions not met, skipping entity control "
-                "(slot_active=%s, timer_owns=%s)",
-                should_be_on,
-                self._timer_owns_entities,
-            )
+        target = self._update_control_intent(self._slot_key(current_slot), should_be_on)
+        if target is None:
             return
 
         now_mono = time.monotonic()
@@ -536,19 +583,18 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
             if not self._is_entity_available(entity):
                 continue
 
-            desired = self._build_desired_control(entity_id, should_be_on)
+            desired = self._build_desired_control(entity_id, target)
             step = self._next_control_step(entity_id, entity, desired)
+            was_on = self._is_entity_on(entity_id, entity)
 
             if step is None:
                 self._last_controlled_states[entity_id] = desired
                 self._clear_attempts(entity_id)
-                if should_be_on:
+                if target:
                     self._confirmed_on.add(entity_id)
-                    if self._home_status:
-                        self._set_timer_owns_entities(True)
                 continue
 
-            if should_be_on and entity_id in self._confirmed_on:
+            if target and entity_id in self._confirmed_on:
                 self._external_overrides.add(entity_id)
                 _LOGGER.info(
                     "External override for %s this slot; skipping further on commands",
@@ -586,7 +632,7 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
 
             try:
                 await self._async_send_step(entity_id, step_name, payload)
-                if should_be_on and self._home_status:
+                if target and not was_on:
                     self._set_timer_owns_entities(True)
 
                 _LOGGER.info(
@@ -607,8 +653,10 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Failed to control %s: %s", entity_id, err)
                 self._clear_control_memory(entity_id)
 
-        if not should_be_on and self._controlled_entities_match(entities, False):
-            self._set_timer_owns_entities(False)
+        if self._controlled_entities_match(entities, target):
+            if not target:
+                self._set_timer_owns_entities(False)
+            self._control_intent = None
 
     def _controlled_entities_match(
         self, entities: list[str], should_be_on: bool
@@ -1036,8 +1084,13 @@ class ShabbatClockCoordinator(DataUpdateCoordinator):
         )
         
         self._clear_control_memory()
+        self._control_intent = None
         if not enabled:
             self._set_timer_owns_entities(False)
+        else:
+            # Re-enabling catches up an active slot without forcing an off slot.
+            self._last_should_be_on = None
+            self._enforced_home_status = None
         await self._control_entities()
         
         # Update the entity
